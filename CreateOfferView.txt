@@ -1,0 +1,500 @@
+1:import React, { useState } from 'react';
+2:import { 
+3:  ArrowLeft, 
+4:  Percent, 
+5:  Wallet, 
+6:  Gift, 
+7:  Package, 
+8:  Search, 
+9:  TrendingUp, 
+10:  AlertTriangle, 
+11:  CheckCircle2, 
+12:  Info,
+13:  X,
+14:  Check,
+15:  Tag
+16:} from 'lucide-react';
+17:
+18:interface CreateOfferViewProps {
+19:  onBack: () => void;
+20:  onCreate?: (offer: any) => void;
+21:}
+22:
+23:export const CreateOfferView: React.FC<CreateOfferViewProps> = ({ onBack, onCreate }) => {
+24:  const [offerType, setOfferType] = useState<'percentage' | 'flat' | 'bogo' | 'free_item'>('percentage');
+25:  
+26:  const [discountPercent, setDiscountPercent] = useState('');
+27:  const [maxCap, setMaxCap] = useState('');
+28:  const [discountAmount, setDiscountAmount] = useState('');
+29:  const [freeItemName, setFreeItemName] = useState('');
+30:  
+31:  const [minOrder, setMinOrder] = useState('');
+32:  const [perUserLimit, setPerUserLimit] = useState('');
+33:  const [totalUsageLimit, setTotalUsageLimit] = useState('');
+34:  
+35:  const [startDate, setStartDate] = useState('');
+36:  const [endDate, setEndDate] = useState('');
+37:  
+38:  const [customerType, setCustomerType] = useState<'all' | 'new' | 'returning'>('all');
+39:  const [orderTypes, setOrderTypes] = useState({ delivery: true, takeaway: true, dineIn: true });
+40:  const [paymentMode, setPaymentMode] = useState<'all' | 'prepaid'>('all');
+41:  const [allowClubbing, setAllowClubbing] = useState(false);
+42:  
+43:  const [applicableScope, setApplicableScope] = useState<'all' | 'category' | 'items'>('all');
+44:  
+45:  const [showSuccess, setShowSuccess] = useState(false);
+46:  const [isOtpSheetOpen, setIsOtpSheetOpen] = useState(false);
+47:  const [otp, setOtp] = useState('');
+48:  const [isVerifying, setIsVerifying] = useState(false);
+49:
+50:  // Item selection states
+51:  const [isItemSelectSheetOpen, setIsItemSelectSheetOpen] = useState(false);
+52:  const [itemSearchQuery, setItemSearchQuery] = useState('');
+53:  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+54:
+55:  const menuCategories = [
+56:    { 
+57:      id: 'c1', 
+58:      name: 'Starters',
+59:      items: [
+60:        { id: 'i1', name: 'Paneer Tikka' },
+61:        { id: 'i2', name: 'Chicken Wings' },
+62:        { id: 'i3', name: 'Spring Rolls' }
+63:      ]
+64:    },
+65:    { 
+66:      id: 'c2', 
+67:      name: 'Main Course',
+68:      items: [
+69:        { id: 'i4', name: 'Butter Chicken' },
+70:        { id: 'i5', name: 'Dal Makhani' },
+71:        { id: 'i6', name: 'Garlic Naan' }
+72:      ]
+73:    },
+74:    { 
+75:      id: 'c3', 
+76:      name: 'Desserts',
+77:      items: [
+78:        { id: 'i7', name: 'Gulab Jamun' },
+79:        { id: 'i8', name: 'Ice Cream' }
+80:      ]
+81:    }
+82:  ];
+83:
+84:  const allItemIds = menuCategories.flatMap(c => c.items.map(i => i.id));
+85:  const isAllSelected = selectedItems.length === allItemIds.length && allItemIds.length > 0;
+86:
+87:  const handleSelectAllItems = () => {
+88:    if (isAllSelected) {
+89:      setSelectedItems([]);
+90:    } else {
+91:      setSelectedItems(allItemIds);
+92:    }
+93:  };
+94:
+95:  const handleSelectCategory = (categoryId: string) => {
+96:    const category = menuCategories.find(c => c.id === categoryId);
+97:    if (!category) return;
+98:    
+99:    const categoryItemIds = category.items.map(i => i.id);
+100:    const allCategoryItemsSelected = categoryItemIds.every(id => selectedItems.includes(id));
+101:    
+102:    if (allCategoryItemsSelected) {
+103:      setSelectedItems(prev => prev.filter(id => !categoryItemIds.includes(id)));
+104:    } else {
+105:      setSelectedItems(prev => {
+106:        const newSelection = [...prev];
+107:        categoryItemIds.forEach(id => {
+108:          if (!newSelection.includes(id)) newSelection.push(id);
+109:        });
+110:        return newSelection;
+111:      });
+112:    }
+113:  };
+114:
+115:  const handleSelectItem = (itemId: string) => {
+116:    setSelectedItems(prev => 
+117:      prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId]
+118:    );
+119:  };
+120:
+121:  // Derived calculations for Cost Impact & Profit Protection
+122:  const estimatedOrders = 150; // Mock base orders
+123:  const avgOrderValue = 400; // Mock AOV
+124:  
+125:  let marginWarning = false;
+126:  let highDiscountWarning = false;
+127:  let expectedOrderIncrease = 0;
+128:  let expectedRevenueBoost = 0;
+129:
+130:  if (offerType === 'percentage' && discountPercent) {
+131:    const pct = parseFloat(discountPercent);
+132:    if (pct > 30) highDiscountWarning = true;
+133:    if (pct > 40) marginWarning = true;
+134:    
+135:    expectedOrderIncrease = Math.min(pct * 0.8, 40);
+136:    expectedRevenueBoost = Math.min(pct * 0.5, 25);
+137:  } else if (offerType === 'flat' && discountAmount) {
+138:    const amt = parseFloat(discountAmount);
+139:    if (amt > 150) highDiscountWarning = true;
+140:    if (amt > 200) marginWarning = true;
+141:    
+142:    expectedOrderIncrease = Math.min((amt / avgOrderValue) * 100 * 0.8, 40);
+143:    expectedRevenueBoost = Math.min((amt / avgOrderValue) * 100 * 0.5, 25);
+144:  }
+145:
+146:  const handleInitiateSave = () => {
+147:    setIsOtpSheetOpen(true);
+148:  };
+149:
+150:  const handleVerifyOtp = () => {
+151:    setIsVerifying(true);
+152:    setTimeout(() => {
+153:      setIsVerifying(false);
+154:      setIsOtpSheetOpen(false);
+155:      handleSave();
+156:    }, 1500);
+157:  };
+158:
+159:  const handleSave = () => {
+160:    const isScheduled = startDate && new Date(startDate).getTime() > Date.now();
+161:    
+162:    // Create new offer data
+163:    const newOffer = {
+164:      id: `OFF-${Math.floor(Math.random() * 900) + 100}`,
+165:      name: `${offerType === 'percentage' ? discountPercent + '% Off' : offerType === 'flat' ? 'Flat ₹' + discountAmount + ' Off' : offerType === 'bogo' ? 'BOGO Offer' : 'Free Item Offer'}`,
+166:      type: `${offerType === 'percentage' ? 'Percentage Discount' : offerType === 'flat' ? 'Flat Discount' : offerType === 'bogo' ? 'Combo Offer' : 'Free Item'}`,
+167:      status: isScheduled ? 'Scheduled' : 'Active',
+168:      description: renderPreviewTitle() + '. ' + renderPreviewSubtitle(),
+169:      validity: `${startDate ? new Date(startDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'Now'} – ${endDate ? new Date(endDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'Anytime'}`,
+170:      usage: `0 / ${totalUsageLimit || '∞'}`,
+171:      orders: 0,
+172:      revenue: '₹0'
+173:    };
+174:
+175:    setShowSuccess(true);
+176:    setTimeout(() => {
+177:      setShowSuccess(false);
+178:      if (onCreate) {
+179:        onCreate(newOffer);
+180:      }
+181:      onBack();
+182:    }, 2500);
+183:  };
+184:
+185:  const getSelectedNames = () => {
+186:    if (applicableScope === 'all') return 'entire menu';
+187:    if (applicableScope === 'category') {
+188:      const selectedCats = menuCategories.filter(c => c.items.every(i => selectedItems.includes(i.id)));
+189:      if (selectedCats.length > 0) return selectedCats.map(c => c.name).join(', ');
+190:      return 'selected categories';
+191:    }
+192:    const selectedItemNames = menuCategories.flatMap(c => c.items).filter(i => selectedItems.includes(i.id)).map(i => i.name);
+193:    if (selectedItemNames.length > 0) return selectedItemNames.join(', ');
+194:    return 'selected items';
+195:  };
+196:
+197:  const renderPreviewTitle = () => {
+198:    if (offerType === 'percentage') {
+199:      return `Get ${discountPercent || 'X'}% off${maxCap ? ` upto ₹${maxCap}` : ''}`;
+200:    } else if (offerType === 'flat') {
+201:      return `Get flat ₹${discountAmount || 'X'} off`;
+202:    } else if (offerType === 'bogo') {
+203:      return `Buy 1 Get 1 Free`;
+204:    } else if (offerType === 'free_item') {
+205:      return `Free ${freeItemName || 'item'} on your order`;
+206:    }
+207:    return 'Offer Title';
+208:  };
+209:
+210:  const renderPreviewSubtitle = () => {
+211:    if (applicableScope === 'all') return 'On all items';
+212:    if (applicableScope === 'category') return 'On selected categories';
+213:    return 'On selected items';
+214:  };
+215:
+216:  const renderTerms = () => {
+217:    const terms = [];
+218:    if (minOrder) terms.push(`Minimum order value of ₹${minOrder} is required.`);
+219:    
+220:    if (offerType === 'percentage') {
+221:      if (maxCap) terms.push(`Maximum discount is capped at ₹${maxCap}.`);
+222:    } else if (offerType === 'bogo') {
+223:      if (applicableScope !== 'all' && selectedItems.length > 0) {
+224:        terms.push(`Valid only on ${getSelectedNames()}.`);
+225:      }
+226:      terms.push('Cheapest item in the cart will be free.');
+227:    } else if (offerType === 'free_item') {
+228:      if (applicableScope !== 'all' && selectedItems.length > 0) {
+229:        terms.push(`Valid only on ${getSelectedNames()}.`);
+230:      }
+231:      if (freeItemName) {
+232:        terms.push(`Free item offered is: ${freeItemName}.`);
+233:      }
+234:    } else {
+235:      if (applicableScope !== 'all') {
+236:         terms.push(`Valid only on ${getSelectedNames()}.`);
+237:      }
+238:    }
+239:    
+240:    if (customerType === 'new') terms.push('Valid for new customers only.');
+241:    if (customerType === 'returning') terms.push('Valid for returning customers only.');
+242:    if (paymentMode === 'prepaid') terms.push('Valid on prepaid online orders only.');
+243:    if (startDate) terms.push(`Offer starts at ${new Date(startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}.`);
+244:    if (endDate) terms.push(`Offer ends at ${new Date(endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}.`);
+245:    if (!startDate && !endDate) terms.push('Offer valid for a limited time period.');
+246:    if (perUserLimit) terms.push(`Offer can be used ${perUserLimit} time(s) per user.`);
+247:    if (totalUsageLimit) terms.push(`Total campaign usage is capped at ${totalUsageLimit} usages.`);
+248:    
+249:    if (allowClubbing) terms.push('Can be clubbed with other ongoing offers.');
+250:    else terms.push('Cannot be clubbed with any other ongoing offers.');
+251:    
+252:    return terms;
+253:  };
+254:
+255:  if (showSuccess) {
+256:    return (
+257:      <div className="min-h-screen bg-[#FFFFFF] flex flex-col items-center justify-center p-6 animate-in fade-in duration-300">
+258:        <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
+259:          <CheckCircle2 size={40} className="text-emerald-600" />
+260:        </div>
+261:        <h2 className="text-2xl font-bold text-slate-900 mb-2">Offer created successfully</h2>
+262:        <p className="text-slate-500 text-center mb-8">Track performance in Campaign Dashboard</p>
+263:      </div>
+264:    );
+265:  }
+266:
+267:  return (
+268:    <div className="min-h-screen bg-[#FFFFFF] pb-32 font-sans overflow-y-auto w-full max-w-full">
+269:      {/* Header */}
+270:      <header className="sticky top-0 z-40 bg-[#FFFFFF] border-b border-slate-200 h-[64px] flex items-center justify-between px-4 shadow-sm w-full">
+271:        <div className="flex items-center gap-3">
+272:          <button onClick={onBack} className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-700 active:scale-95 transition-transform bg-slate-50 rounded-full hover:bg-slate-100">
+273:            <ArrowLeft size={20} />
+274:          </button>
+275:          <div>
+276:            <h1 className="text-[17px] font-bold text-slate-900 leading-tight">Create Offer</h1>
+277:            <p className="text-[12px] font-medium text-slate-500">Boost sales with discounts</p>
+278:          </div>
+279:        </div>
+280:      </header>
+281:
+282:      <div className="p-4 space-y-6 max-w-full overflow-hidden">
+283:        
+284:        {/* Live Preview Card */}
+285:        <div className="space-y-1.5">
+286:          <h3 className="text-[12px] font-bold text-slate-500 px-1 uppercase tracking-wider">Live Preview / Coupon</h3>
+287:          <div className="bg-white border border-slate-200 p-3.5 rounded-[16px] flex items-center justify-between max-w-full relative overflow-hidden">
+288:            <div className="absolute top-0 right-0 w-24 h-24 bg-slate-50 rounded-bl-[100px]" />
+289:            <div className="overflow-hidden flex-1 mr-3 relative z-10">
+290:              <h4 className="text-[15px] font-black text-slate-900 mb-0.5 truncate">{renderPreviewTitle()}</h4>
+291:              <p className="text-[13px] font-medium text-slate-500 truncate tracking-wide">{renderPreviewSubtitle()}</p>
+292:            </div>
+293:            <button className="text-[#1E90FF] font-bold text-[13px] shrink-0 bg-blue-50 border border-blue-100 hover:bg-blue-100 px-3.5 py-1.5 rounded-full transition-all z-10">Preview</button>
+294:          </div>
+295:        </div>
+296:
+297:        {/* Offer Mechanics */}
+298:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-4">
+299:          <h3 className="text-[16px] font-bold text-slate-900 mb-2">Offer Type</h3>
+300:          <div className="grid grid-cols-2 gap-3">
+301:            {[
+302:              { id: 'percentage', label: 'Percentage', icon: <Percent size={18} /> },
+303:              { id: 'flat', label: 'Flat Amount', icon: <Wallet size={18} /> },
+304:              { id: 'bogo', label: 'BOGO', icon: <Gift size={18} /> },
+305:              { id: 'free_item', label: 'Free Item', icon: <Package size={18} /> }
+306:            ].map((type) => (
+307:              <button 
+308:                key={type.id}
+309:                onClick={() => setOfferType(type.id as any)}
+310:                className={`h-[60px] flex items-center gap-3 px-4 rounded-[14px] border transition-all ${offerType === type.id ? 'bg-blue-50 border-blue-200 text-[#1E90FF]' : 'bg-[#FFFFFF] border-slate-200 text-slate-700'}`}
+311:              >
+312:                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${offerType === type.id ? 'bg-white' : 'bg-slate-50'}`}>
+313:                  {type.icon}
+314:                </div>
+315:                <span className="text-[14px] font-bold">{type.label}</span>
+316:              </button>
+317:            ))}
+318:          </div>
+319:        </div>
+320:
+321:        {/* Value Configuration & Applicable Menu */}
+322:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-5">
+323:          <h3 className="text-[16px] font-bold text-slate-900 mb-2">Configuration</h3>
+324:          
+325:          {offerType === 'percentage' && (
+326:            <div className="space-y-4 animate-in fade-in">
+327:              <div className="grid grid-cols-2 gap-3">
+328:                <div className="space-y-1.5">
+329:                  <label className="text-[13px] font-medium text-slate-600">Discount %</label>
+330:                  <div className="relative">
+331:                    <input type="number" value={discountPercent} onChange={(e) => setDiscountPercent(e.target.value)} placeholder="0" className="w-full h-11 pl-4 pr-10 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] focus:bg-[#FFFFFF] inline-block font-bold text-slate-900" />
+332:                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+333:                  </div>
+334:                </div>
+335:                <div className="space-y-1.5">
+336:                  <label className="text-[13px] font-medium text-slate-600">Max Cap (₹)</label>
+337:                  <input type="number" value={maxCap} onChange={(e) => setMaxCap(e.target.value)} placeholder="0" className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] focus:bg-[#FFFFFF] font-bold text-slate-900" />
+338:                </div>
+339:              </div>
+340:            </div>
+341:          )}
+342:
+343:          {offerType === 'flat' && (
+344:            <div className="space-y-4 animate-in fade-in">
+345:              <div className="space-y-1.5">
+346:                <label className="text-[13px] font-medium text-slate-600">Discount Amount (₹)</label>
+347:                <input type="number" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} placeholder="0" className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] font-bold text-slate-900" />
+348:              </div>
+349:            </div>
+350:          )}
+351:
+352:          {offerType === 'free_item' && (
+353:            <div className="space-y-4 animate-in fade-in">
+354:              <div className="space-y-1.5">
+355:                <label className="text-[13px] font-medium text-slate-600">Free Item Name</label>
+356:                <input type="text" value={freeItemName} onChange={(e) => setFreeItemName(e.target.value)} placeholder="e.g. Free Garlic Bread" className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] font-bold text-slate-900" />
+357:              </div>
+358:            </div>
+359:          )}
+360:
+361:          <div className="space-y-3 pt-2">
+362:             <label className="text-[13px] font-medium text-slate-600">Applicable On</label>
+363:             <div className="grid grid-cols-3 gap-2">
+364:                <button onClick={() => setApplicableScope('all')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${applicableScope === 'all' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>Entire Menu</button>
+365:                <button onClick={() => setApplicableScope('category')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${applicableScope === 'category' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>Category</button>
+366:                <button onClick={() => setApplicableScope('items')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${applicableScope === 'items' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>Items</button>
+367:             </div>
+368:             
+369:             {(applicableScope === 'items' || applicableScope === 'category') && (
+370:               <div className="pt-2 animate-in fade-in slide-in-from-top-2">
+371:                 <button onClick={() => setIsItemSelectSheetOpen(true)} className="w-full h-[52px] bg-slate-50 border border-slate-200 border-dashed rounded-[14px] flex items-center justify-center gap-2 text-[#1E90FF] font-bold text-[14px]">
+372:                   <Search size={18} />
+373:                   {selectedItems.length > 0 ? `${selectedItems.length} Selections` : `Choose ${applicableScope === 'category' ? 'Categories' : 'Items'}`}
+374:                 </button>
+375:               </div>
+376:             )}
+377:          </div>
+378:        </div>
+379:
+380:        {/* Targeting */}
+381:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-5">
+382:           <h3 className="text-[16px] font-bold text-slate-900 mb-2">Targeting</h3>
+383:           
+384:           <div className="space-y-3">
+385:             <label className="text-[13px] font-medium text-slate-600">Customer Segment</label>
+386:             <div className="grid grid-cols-3 gap-2">
+387:               <button onClick={() => setCustomerType('all')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${customerType === 'all' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>All</button>
+388:               <button onClick={() => setCustomerType('new')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${customerType === 'new' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>New</button>
+389:               <button onClick={() => setCustomerType('returning')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${customerType === 'returning' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>Returning</button>
+390:             </div>
+391:           </div>
+392:
+393:           <div className="space-y-3">
+394:             <label className="text-[13px] font-medium text-slate-600">Order Type</label>
+395:             <div className="flex gap-2 flex-wrap">
+396:               {['delivery', 'takeaway', 'dineIn'].map((type) => (
+397:                 <button key={type} onClick={() => setOrderTypes(p => ({ ...p, [type]: !p[type as keyof typeof orderTypes] }))} className={`px-4 h-10 rounded-full text-[13px] font-bold transition-all border ${orderTypes[type as keyof typeof orderTypes] ? 'bg-blue-50 border-blue-200 text-[#1E90FF]' : 'bg-white border-slate-200 text-slate-600'}`}>
+398:                   {type === 'dineIn' ? 'Dine-In' : type.charAt(0).toUpperCase() + type.slice(1)}
+399:                 </button>
+400:               ))}
+401:             </div>
+402:           </div>
+403:
+404:           <div className="space-y-3">
+405:             <label className="text-[13px] font-medium text-slate-600">Payment Mode</label>
+406:             <div className="grid grid-cols-2 gap-2">
+407:               <button onClick={() => setPaymentMode('all')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${paymentMode === 'all' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>All Modes</button>
+408:               <button onClick={() => setPaymentMode('prepaid')} className={`h-10 rounded-[10px] text-[13px] font-bold transition-all ${paymentMode === 'prepaid' ? 'bg-[#1E90FF] text-white' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>Prepaid Only</button>
+409:             </div>
+410:           </div>
+411:        </div>
+412:
+413:        {/* Schedule */}
+414:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-4">
+415:          <h3 className="text-[16px] font-bold text-slate-900 mb-2">Validity Schedule</h3>
+416:          <div className="grid grid-cols-2 gap-3">
+417:            <div className="space-y-1.5">
+418:              <label className="text-[13px] font-medium text-slate-600">Start Date</label>
+419:              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-[12px] text-[14px] font-bold text-slate-900 focus:bg-[#FFFFFF] focus:outline-none" />
+420:            </div>
+421:            <div className="space-y-1.5">
+422:              <label className="text-[13px] font-medium text-slate-600">End Date</label>
+423:              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-[12px] text-[14px] font-bold text-slate-900 focus:bg-[#FFFFFF] focus:outline-none" />
+424:            </div>
+425:          </div>
+426:        </div>
+427:
+428:        {/* Conditions */}
+429:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-4">
+430:           <h3 className="text-[16px] font-bold text-slate-900 mb-2">Conditions</h3>
+431:           <div className="space-y-4">
+432:             <div className="space-y-1.5">
+433:               <label className="text-[13px] font-medium text-slate-600">Min Order Value (₹)</label>
+434:               <input type="number" value={minOrder} onChange={(e) => setMinOrder(e.target.value)} placeholder="0" className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] font-bold text-slate-900" />
+435:             </div>
+436:             <div className="space-y-1.5">
+437:               <label className="text-[13px] font-medium text-slate-600">Per User Usage Limit</label>
+438:               <input type="number" value={perUserLimit} onChange={(e) => setPerUserLimit(e.target.value)} placeholder="e.g. 1" className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] font-bold text-slate-900" />
+439:             </div>
+440:             <div className="space-y-1.5">
+441:               <label className="text-[13px] font-medium text-slate-600">Total Campaign Usage</label>
+442:               <input type="number" value={totalUsageLimit} onChange={(e) => setTotalUsageLimit(e.target.value)} placeholder="Unlimited" className="w-full h-11 px-4 bg-slate-50 border border-slate-200 rounded-[12px] text-[15px] font-bold text-slate-900" />
+443:             </div>
+444:             
+445:             <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+446:               <div>
+447:                  <h4 className="text-[14px] font-bold text-slate-900">Offer Clubbing</h4>
+448:                  <p className="text-[12px] text-slate-500">Allow with other offers</p>
+449:               </div>
+450:               <div className="flex bg-slate-100 p-1 rounded-lg">
+451:                 <button onClick={() => setAllowClubbing(true)} className={`px-4 py-1.5 rounded-[6px] text-[12px] font-bold transition-all ${allowClubbing ? 'bg-[#FFFFFF] shadow-sm text-slate-900' : 'text-slate-500'}`}>Yes</button>
+452:                 <button onClick={() => setAllowClubbing(false)} className={`px-4 py-1.5 rounded-[6px] text-[12px] font-bold transition-all ${!allowClubbing ? 'bg-[#FFFFFF] shadow-sm text-slate-900' : 'text-slate-500'}`}>No</button>
+453:               </div>
+454:             </div>
+455:           </div>
+456:        </div>
+457:
+458:        {/* Projected Impact */}
+459:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-4">
+460:          <div className="flex items-center gap-2 mb-2">
+461:             <TrendingUp size={18} className="text-blue-500" />
+462:             <h3 className="text-[16px] font-bold text-slate-900">Projected Impact</h3>
+463:          </div>
+464:          <div className="grid grid-cols-2 gap-3">
+465:             <div className="bg-slate-50 p-3 rounded-[16px] border border-slate-100">
+466:               <span className="text-[12px] font-medium text-slate-500 block mb-1">Expected Orders</span>
+467:               <span className="text-[18px] font-black text-slate-900">+{expectedOrderIncrease.toFixed(1)}%</span>
+468:             </div>
+469:             <div className="bg-slate-50 p-3 rounded-[16px] border border-slate-100">
+470:               <span className="text-[12px] font-medium text-slate-500 block mb-1">Revenue Boost</span>
+471:               <span className="text-[18px] font-black text-[#16A34A]">+{expectedRevenueBoost.toFixed(1)}%</span>
+472:             </div>
+473:          </div>
+474:          {(marginWarning || highDiscountWarning) && (
+475:            <div className="bg-amber-50 rounded-[12px] p-3 flex gap-3 text-amber-800">
+476:              <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+477:              <p className="text-[13px] font-medium leading-snug">
+478:                {marginWarning ? 'This high discount may negatively impact your profit margin. Ensure you have high volume to offset.' : 'High discount selected. Consider adding a max cap limit.'}
+479:              </p>
+480:            </div>
+481:          )}
+482:        </div>
+483:
+484:        {/* Terms and Conditions Live Card */}
+485:        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-200 space-y-3">
+486:          <h3 className="text-[16px] font-bold text-slate-900 mb-2">Live Terms & Conditions</h3>
+487:          <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+488:            <ul className="space-y-2">
+489:              {renderTerms().map((term, idx) => (
+490:                <li key={idx} className="flex items-start gap-2 text-[13px] text-slate-600 font-medium">
+491:                  <div className="w-4 h-4 rounded-full bg-slate-200 shrink-0 mt-0.5 flex items-center justify-center">
+492:                    <Check size={10} className="text-slate-500" />
+493:                  </div>
+494:                  {term}
+495:                </li>
+496:              ))}
+497:            </ul>
+498:          </div>
+499:        </div>
+500:
