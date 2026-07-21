@@ -1,524 +1,488 @@
 import React, { useState } from 'react';
 import { 
-  ArrowLeft, 
-  Download, 
-  TrendingUp, 
-  TrendingDown, 
-  Calendar, 
-  ChevronRight, 
-  PieChart, 
-  BarChart3, 
-  Clock, 
-  Users, 
-  Wallet, 
-  AlertCircle, 
-  FileText, 
-  FileSpreadsheet,
-  CheckCircle2,
-  XCircle,
-  Lightbulb,
-  Flame,
-  ChevronDown,
-  ChevronUp,
-  ShoppingBag
+  ArrowLeft, Download, Clock, CalendarDays, Users, User, XCircle, AlertCircle, CheckCircle2, ShoppingBag, Coffee, Sun, CloudSun, Moon, List, PieChart, Globe, Store, AlertTriangle
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 
 interface SalesReportViewProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
-type DateFilter = 'Today' | 'Yesterday' | 'Last 7 Days' | 'Last 30 Days' | 'Custom Range';
-
 export const SalesReportView: React.FC<SalesReportViewProps> = ({ onBack }) => {
-  const [dateFilter, setDateFilter] = useState<DateFilter>('Today');
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
 
-  const filters: DateFilter[] = ['Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days', 'Custom Range'];
+  const worstItemsData = [
+    { name: 'Veg Hakka Noodles', category: 'Chinese', quantity: 12, revenue: '₹ 1,800', percent: '2%' },
+    { name: 'Mushroom Soup', category: 'Soups', quantity: 8, revenue: '₹ 1,200', percent: '1.5%' },
+    { name: 'Diet Coke', category: 'Beverages', quantity: 5, revenue: '₹ 300', percent: '0.8%' },
+    { name: 'Plain Dosa', category: 'South Indian', quantity: 3, revenue: '₹ 240', percent: '0.5%' },
+    { name: 'Green Salad', category: 'Sides', quantity: 2, revenue: '₹ 150', percent: '0.2%' },
+  ];
 
-  const handleDownload = (reportName: string) => {
-    setIsDownloading(true);
-    
-    // Simulate API call and data generation
-    setTimeout(() => {
-      // Dummy data for the report
-      const data = [
-        { Date: '2026-03-23', OrderID: 'ORD-1001', Type: 'Delivery', Amount: 450, Status: 'Completed' },
-        { Date: '2026-03-23', OrderID: 'ORD-1002', Type: 'Dine-In', Amount: 1200, Status: 'Completed' },
-        { Date: '2026-03-23', OrderID: 'ORD-1003', Type: 'Takeaway', Amount: 350, Status: 'Completed' },
-        { Date: '2026-03-23', OrderID: 'ORD-1004', Type: 'Delivery', Amount: 800, Status: 'Cancelled' },
-      ];
+  const timeBasedData = [
+    { label: 'Breakfast', time: '6:00 AM - 11:00 AM', icon: Coffee, revenue: '₹ 12,400', orders: 45, color: 'text-amber-600', bg: 'bg-amber-100' },
+    { label: 'Lunch', time: '11:00 AM - 3:00 PM', icon: Sun, revenue: '₹ 45,600', orders: 120, color: 'text-orange-600', bg: 'bg-orange-100' },
+    { label: 'Evening', time: '3:00 PM - 7:00 PM', icon: CloudSun, revenue: '₹ 28,500', orders: 85, color: 'text-blue-600', bg: 'bg-blue-100' },
+    { label: 'Dinner', time: '7:00 PM - 12:00 AM', icon: Moon, revenue: '₹ 68,900', orders: 210, color: 'text-indigo-600', bg: 'bg-indigo-100' },
+  ];
 
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Report Data");
-      
-      // Generate Excel file and trigger download
-      XLSX.writeFile(wb, `${reportName.replace(/\s+/g, '_')}_${dateFilter.replace(/\s+/g, '_')}.xlsx`);
-      
-      setIsDownloading(false);
-    }, 1000);
-  };
+  const categoryData = [
+    { label: 'Main Course', percent: '45%', amount: '₹ 56,025', color: 'bg-orange-100 text-orange-600' },
+    { label: 'Starters', percent: '25%', amount: '₹ 31,125', color: 'bg-teal-100 text-teal-600' },
+    { label: 'Beverages', percent: '15%', amount: '₹ 18,675', color: 'bg-cyan-100 text-cyan-600' },
+    { label: 'Desserts', percent: '10%', amount: '₹ 12,450', color: 'bg-pink-100 text-pink-600' },
+    { label: 'Breads', percent: '5%', amount: '₹ 6,225', color: 'bg-yellow-100 text-yellow-600' },
+  ];
 
-  const toggleCategory = (category: string) => {
-    if (expandedCategory === category) {
-      setExpandedCategory(null);
-    } else {
-      setExpandedCategory(category);
-    }
-  };
+  const subCategoryData = [
+    { label: 'Pizza', percent: '30%', amount: '₹ 37,350', color: 'bg-red-100 text-red-600' },
+    { label: 'Burgers', percent: '20%', amount: '₹ 24,900', color: 'bg-blue-100 text-blue-600' },
+    { label: 'Pasta', percent: '15%', amount: '₹ 18,675', color: 'bg-green-100 text-green-600' },
+    { label: 'Shakes', percent: '12%', amount: '₹ 14,940', color: 'bg-purple-100 text-purple-600' },
+    { label: 'Ice Cream', percent: '8%', amount: '₹ 9,960', color: 'bg-pink-100 text-pink-600' },
+    { label: 'Others', percent: '15%', amount: '₹ 18,675', color: 'bg-slate-100 text-slate-600' },
+  ];
+
+  const foodItemsData = [
+    { name: 'Margherita Pizza', category: 'Pizza', quantity: 145, revenue: '₹ 43,500', percent: '35%' },
+    { name: 'Paneer Tikka', category: 'Starters', quantity: 120, revenue: '₹ 30,000', percent: '24%' },
+    { name: 'Veggie Burger', category: 'Burgers', quantity: 180, revenue: '₹ 27,000', percent: '21%' },
+    { name: 'Cold Coffee', category: 'Beverages', quantity: 95, revenue: '₹ 14,250', percent: '11%' },
+    { name: 'Garlic Bread', category: 'Sides', quantity: 65, revenue: '₹ 9,750', percent: '9%' },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#FFFFFF] pb-24 animate-in fade-in duration-300">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white border-b border-slate-200 px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#FFFFFF] font-sans animate-in fade-in duration-300 pb-20">
+      {/* Page Header */}
+      <header className="sticky top-0 z-40 bg-[#FFFFFF] border-b border-slate-100 h-[56px] flex items-center justify-between px-4">
+        <div className="flex items-center">
           <button 
-            onClick={onBack}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-700 active:scale-95 transition-transform"
+            onClick={onBack} 
+            className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-700 active:bg-slate-100 rounded-full transition-colors"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={22} />
           </button>
-          <h1 className="text-lg font-bold text-slate-900">Sales Report</h1>
+          <h1 className="text-[18px] font-semibold text-slate-900 ml-2">Sales Report</h1>
         </div>
-        <button 
-          onClick={() => document.getElementById('download-section')?.scrollIntoView({ behavior: 'smooth' })}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-600 font-semibold text-sm active:scale-95 transition-transform"
-        >
-          <Download size={16} />
-          <span>Export</span>
+        <button className="h-8 px-3 bg-blue-50 text-blue-600 rounded-full text-[13px] font-medium flex items-center gap-1.5 active:scale-95 transition-transform">
+          <Download size={14} />
+          Download
         </button>
       </header>
 
-      {/* Date Filter */}
-      <div className="bg-white border-b border-slate-200 pt-3 pb-3 sticky top-14 z-40">
-        <div className="flex overflow-x-auto no-scrollbar px-4 gap-2">
-          {filters.map(filter => (
-            <button
-              key={filter}
-              onClick={() => setDateFilter(filter)}
-              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-colors ${
-                dateFilter === filter 
-                  ? 'bg-slate-900 text-white shadow-sm' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {filter === 'Custom Range' && <Calendar size={14} className="inline mr-1.5 -mt-0.5" />}
-              {filter}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="p-4 space-y-6">
+      <div className="p-4 space-y-4 pt-6">
         
-        {/* Top Summary Section (Hero) */}
-        <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Summary</h2>
-            <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">
-              <TrendingUp size={14} />
-              <span className="text-xs font-bold">+12% vs last period</span>
+        {/* Operational Hours Card */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm flex items-center justify-between">
+          <div className="flex-1 border-r border-slate-100">
+            <div className="flex items-center gap-2 text-slate-500 mb-2 mt-1">
+              <CalendarDays size={18} className="text-[#1E90FF]"/>
+              <h3 className="text-[13px] font-medium">Days Opened</h3>
+            </div>
+            <p className="text-2xl font-bold text-slate-900">26 <span className="text-[12px] font-medium text-slate-500 ml-1">days</span></p>
+          </div>
+          <div className="flex-1 pl-5">
+            <div className="flex items-center gap-2 text-slate-500 mb-2 mt-1">
+              <Clock size={18} className="text-emerald-500"/>
+              <h3 className="text-[13px] font-medium">Total Hours</h3>
+            </div>
+            <p className="text-2xl font-bold text-slate-900">312 <span className="text-[12px] font-medium text-slate-500 ml-1">hours</span></p>
+          </div>
+        </div>
+
+        {/* Sales Overview Advanced Layout */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-[16px] font-bold text-slate-900">Sales Overview</h3>
+            <span className="text-[12px] font-medium text-slate-500">Today</span>
+          </div>
+
+          {/* Hero Net Sales */}
+          <div className="bg-slate-900 rounded-[20px] p-5 relative overflow-hidden shadow-lg">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
+            <p className="text-white/70 text-[12px] font-bold uppercase tracking-wider mb-1">Net Sales</p>
+            <p className="text-[32px] font-black text-white leading-tight mb-2">₹ 1,24,500</p>
+            <div className="inline-flex items-center bg-white/10 px-2 py-1 rounded-lg">
+              <ShoppingBag size={12} className="text-white/80 mr-1.5" />
+              <span className="text-[12px] font-medium text-white/90">420 Orders</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+             {/* Online Orders Card */}
+             <div className="bg-[#FFFFFF] border border-slate-200 rounded-[20px] p-4 flex flex-col">
+               <div className="flex items-center gap-2 mb-3">
+                 <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center">
+                   <Globe size={14} className="text-[#1E90FF]" />
+                 </div>
+                 <span className="font-bold text-slate-800 text-[14px]">Online</span>
+               </div>
+               <p className="text-[20px] font-black text-slate-900 mb-0.5">₹ 85,200</p>
+               <p className="text-[12px] font-medium text-slate-500 mb-4">285 Orders</p>
+               
+               <div className="mt-auto space-y-2 border-t border-slate-100 pt-3">
+                 <div className="flex justify-between items-center">
+                   <span className="text-[11px] font-bold text-slate-400 uppercase">Delivery</span>
+                   <span className="text-[12px] font-bold text-slate-700">₹49.3K <span className="font-medium text-slate-400">/ 198</span></span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span className="text-[11px] font-bold text-slate-400 uppercase">Takeaway</span>
+                   <span className="text-[12px] font-bold text-slate-700">₹15.4K <span className="font-medium text-slate-400">/ 42</span></span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span className="text-[11px] font-bold text-slate-400 uppercase">Dine In</span>
+                   <span className="text-[12px] font-bold text-slate-700">₹12K <span className="font-medium text-slate-400">/ 30</span></span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span className="text-[11px] font-bold text-slate-400 uppercase">Booking</span>
+                   <span className="text-[12px] font-bold text-slate-700">₹8.5K <span className="font-medium text-slate-400">/ 15</span></span>
+                 </div>
+               </div>
+             </div>
+
+             {/* Offline Orders Card */}
+              <div className="bg-[#FFFFFF] border border-slate-200 rounded-[20px] p-4 flex flex-col">
+               <div className="flex items-center gap-2 mb-3">
+                 <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center">
+                   <Store size={14} className="text-amber-600" />
+                 </div>
+                 <span className="font-bold text-slate-800 text-[14px]">Offline</span>
+               </div>
+               <p className="text-[20px] font-black text-slate-900 mb-0.5">₹ 39,300</p>
+               <p className="text-[12px] font-medium text-slate-500 mb-4">135 Orders</p>
+               
+               <div className="mt-auto space-y-2 border-t border-slate-100 pt-3">
+                 <div className="flex justify-between items-center">
+                   <span className="text-[11px] font-bold text-slate-400 uppercase">Dine In</span>
+                   <span className="text-[12px] font-bold text-slate-700">₹25K <span className="font-medium text-slate-400">/ 90</span></span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span className="text-[11px] font-bold text-slate-400 uppercase">Takeaway</span>
+                   <span className="text-[12px] font-bold text-slate-700">₹14.3K <span className="font-medium text-slate-400">/ 45</span></span>
+                 </div>
+               </div>
+             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+             {/* AOV Metrics */}
+             <div className="bg-[#FFFFFF] border border-slate-200 rounded-[20px] p-4 flex flex-col justify-between">
+                <div>
+                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Net AOV</p>
+                   <p className="text-[20px] font-black text-slate-900">₹ 296</p>
+                </div>
+                <div className="mt-4 space-y-2">
+                   <div className="flex justify-between">
+                     <span className="text-[11px] font-medium text-slate-500">Dine In</span>
+                     <span className="text-[12px] font-bold text-slate-700">₹308</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-[11px] font-medium text-slate-500">Takeaway</span>
+                     <span className="text-[12px] font-bold text-slate-700">₹341</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span className="text-[11px] font-medium text-slate-500">Delivery</span>
+                     <span className="text-[12px] font-bold text-slate-700">₹248</span>
+                   </div>
+                </div>
+             </div>
+
+             {/* Refund & Cancellations */}
+             <div className="flex flex-col gap-3">
+               <div className="bg-rose-50 border border-rose-100 rounded-[20px] p-4 flex-1 flex flex-col justify-center">
+                  <div className="flex items-center justify-between mb-2">
+                     <p className="text-[11px] font-bold text-rose-600 uppercase tracking-wider">Refund Loss</p>
+                     <AlertCircle size={14} className="text-rose-500" />
+                  </div>
+                  <p className="text-[20px] font-black text-slate-900">₹ 1,200</p>
+                  <p className="text-[11px] font-medium text-rose-500 mt-0.5">4 orders</p>
+               </div>
+               <div className="bg-orange-50 border border-orange-100 rounded-[20px] p-4 flex-1 flex flex-col justify-center">
+                  <div className="flex items-center justify-between mb-2">
+                     <p className="text-[11px] font-bold text-orange-600 uppercase tracking-wider">Cancelled</p>
+                     <XCircle size={14} className="text-orange-500" />
+                  </div>
+                  <p className="text-[20px] font-black text-slate-900">23</p>
+                  <p className="text-[11px] font-medium text-orange-500 mt-0.5">orders</p>
+               </div>
+             </div>
+          </div>
+        </div>
+
+        {/* Customer Type Contribution */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-[15px] font-semibold text-slate-900">Customer Type</h3>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
+              <Users size={16} />
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Sales</p>
-              <p className="text-2xl font-black text-slate-900 tracking-tight">₹1,24,500</p>
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Net Earnings</p>
-              <p className="text-2xl font-black text-blue-600 tracking-tight">₹1,02,300</p>
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-slate-700">New vs Returning</span>
           </div>
-          
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
+            <div className="h-full bg-blue-500" style={{ width: '68%' }} />
+            <div className="h-full bg-emerald-500" style={{ width: '32%' }} />
+          </div>
+          <div className="flex justify-between mt-3">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
-                <ShoppingBag size={16} />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-400 uppercase">Total Orders</p>
-                <p className="text-base font-bold text-slate-900">320 Orders</p>
-              </div>
+              <div className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="text-xs font-medium text-slate-600">New (68%)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-emerald-500" />
+              <span className="text-xs font-medium text-slate-600">Returning (32%)</span>
             </div>
           </div>
-        </section>
-
-        {/* Smart Insights */}
-        <section className="space-y-3">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider px-1">Smart Insights</h3>
-          <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-4 border border-indigo-100/50 space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5"><Flame size={16} className="text-orange-500" /></div>
-              <p className="text-sm font-medium text-slate-700"><strong className="text-slate-900">Pizza</strong> contributes 32% of your total revenue.</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5"><TrendingDown size={16} className="text-rose-500" /></div>
-              <p className="text-sm font-medium text-slate-700"><strong className="text-slate-900">Lunch orders</strong> dropped 12% compared to yesterday.</p>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5"><Lightbulb size={16} className="text-amber-500" /></div>
-              <p className="text-sm font-medium text-slate-700"><strong className="text-slate-900">Promote Biryani</strong> for growth during dinner hours.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Revenue Breakdown */}
-        <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Revenue Breakdown</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-slate-600">Gross Sales</span>
-              <span className="text-sm font-bold text-slate-900">₹1,24,500</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-slate-600">Discounts</span>
-              <span className="text-sm font-bold text-rose-600">-₹8,000</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-slate-600">Taxes</span>
-              <span className="text-sm font-bold text-slate-900">₹10,500</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-slate-600">Platform Fees</span>
-              <span className="text-sm font-bold text-rose-600">-₹4,200</span>
-            </div>
-            <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
-              <span className="text-base font-bold text-slate-900">Net Earnings</span>
-              <span className="text-lg font-black text-blue-600">₹1,02,300</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Sales Breakdown (By Order Type) */}
-        <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Sales by Order Type</h3>
-          <div className="space-y-4">
-            {[
-              { label: 'Delivery', amount: '₹60,000', percent: 48, color: 'bg-blue-500' },
-              { label: 'Takeaway', amount: '₹25,000', percent: 20, color: 'bg-indigo-500' },
-              { label: 'Dine-In', amount: '₹30,000', percent: 24, color: 'bg-emerald-500' },
-              { label: 'Booking', amount: '₹9,500', percent: 8, color: 'bg-amber-500' },
-            ].map((item, idx) => (
-              <div key={idx}>
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-sm font-bold text-slate-700">{item.label}</span>
-                  <span className="text-sm font-bold text-slate-900">{item.amount}</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2">
-                  <div className={`${item.color} h-2 rounded-full`} style={{ width: `${item.percent}%` }}></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Order Metrics & Payment Split */}
-        <div className="grid grid-cols-2 gap-4">
-          <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Order Metrics</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
-                <p className="text-sm font-bold text-slate-900">320</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Completed</p>
-                <p className="text-sm font-bold text-emerald-600">304</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Cancelled</p>
-                <p className="text-sm font-bold text-rose-600">16 (5%)</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Avg Value</p>
-                <p className="text-sm font-bold text-slate-900">₹389</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Payment Split</h3>
-            <div className="space-y-3">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Prepaid (Online)</p>
-                <p className="text-sm font-bold text-slate-900">₹84,500</p>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1">
-                  <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: '68%' }}></div>
-                </div>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Cash on Delivery</p>
-                <p className="text-sm font-bold text-slate-900">₹40,000</p>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1">
-                  <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: '32%' }}></div>
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
 
-        {/* Category Contribution Section */}
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Category Contribution</h3>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {[
-              { name: 'Pizza', amount: '₹40,000', percent: '32%', items: [{ name: 'Veg Supreme Pizza', amount: '₹18,000' }, { name: 'Farmhouse Pizza', amount: '₹12,000' }, { name: 'Margherita', amount: '₹10,000' }] },
-              { name: 'Biryani', amount: '₹30,000', percent: '24%', items: [{ name: 'Chicken Biryani', amount: '₹22,000' }, { name: 'Veg Biryani', amount: '₹8,000' }] },
-              { name: 'Beverages', amount: '₹15,000', percent: '12%', items: [{ name: 'Coke Zero', amount: '₹8,000' }, { name: 'Cold Coffee', amount: '₹7,000' }] },
-            ].map((category, idx) => (
-              <div key={idx} className="bg-white">
-                <button 
-                  onClick={() => toggleCategory(category.name)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
-                      <PieChart size={14} />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-sm font-bold text-slate-900">{category.name}</p>
-                      <p className="text-xs font-medium text-slate-500">{category.percent} of revenue</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-slate-900">{category.amount}</span>
-                    {expandedCategory === category.name ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-                  </div>
-                </button>
-                
-                {/* Drill Down */}
-                {expandedCategory === category.name && (
-                  <div className="bg-slate-50 px-4 py-3 border-t border-slate-100/50">
-                    <div className="space-y-2">
-                      {category.items.map((item, i) => (
-                        <div key={i} className="flex justify-between items-center pl-11 pr-7">
-                          <span className="text-xs font-medium text-slate-600">{item.name}</span>
-                          <span className="text-xs font-bold text-slate-900">{item.amount}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Item Performance Section */}
-        <div className="grid grid-cols-2 gap-4">
-          <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp size={16} className="text-emerald-500" />
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Top Items</h3>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-bold text-slate-800 truncate">Chicken Biryani</p>
-                <p className="text-[10px] font-medium text-emerald-600">₹22,000</p>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-800 truncate">Paneer Pizza</p>
-                <p className="text-[10px] font-medium text-emerald-600">₹18,000</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingDown size={16} className="text-rose-500" />
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Low Items</h3>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-bold text-slate-800 truncate">Veg Soup</p>
-                <p className="text-[10px] font-medium text-rose-600">3 orders</p>
-              </div>
-              <div>
-                <p className="text-xs font-bold text-slate-800 truncate">Cold Salad</p>
-                <p className="text-[10px] font-medium text-rose-600">2 orders</p>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Time-Based & Customer Insights */}
-        <div className="grid grid-cols-2 gap-4">
-          <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Time Insights</h3>
-            <div className="space-y-3">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Peak Hours</p>
-                <p className="text-sm font-bold text-slate-900">7 PM – 10 PM</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Low Hours</p>
-                <p className="text-sm font-bold text-slate-900">3 PM – 5 PM</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Customers</h3>
-            <div className="space-y-3">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">New</p>
-                <p className="text-sm font-bold text-slate-900">120</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Repeat</p>
-                <p className="text-sm font-bold text-slate-900">200</p>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Customer Insight Banner */}
-        <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-            <Users size={14} />
-          </div>
-          <p className="text-xs font-medium text-blue-900">
-            Top 20% of your customers generate <strong>60% of your revenue</strong>.
-          </p>
-        </div>
-
-        {/* Settlement & Refund Section */}
-        <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Available Balance</p>
-              <p className="text-xl font-black text-slate-900">₹42,500</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Pending Settlement</p>
-              <p className="text-xl font-black text-slate-900">₹18,200</p>
+        {/* Gender Ratio */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-[15px] font-semibold text-slate-900">Gender Ratio</h3>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
+              <User size={16} />
             </div>
           </div>
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Next Payout Date</p>
-              <p className="text-sm font-bold text-slate-900">24 Mar 2026</p>
-            </div>
-          </div>
-          <div className="flex items-center justify-between pt-1">
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Refund Amount</p>
-              <p className="text-sm font-bold text-rose-600">₹2,400</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Cancellation Loss</p>
-              <p className="text-sm font-bold text-rose-600">₹1,800</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Download Reports Section */}
-        <section id="download-section" className="pt-4">
-          <h2 className="text-lg font-black text-slate-900 mb-4 px-1">Download Reports</h2>
           
-          <div className="space-y-6">
-            {/* Sales Reports */}
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Sales Reports</h3>
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                {[
-                  { name: 'Sales Summary Report', icon: BarChart3 },
-                  { name: 'Order-Level Report', icon: FileText },
-                  { name: 'Item Performance Report', icon: PieChart },
-                ].map((report, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => handleDownload(report.name)}
-                    disabled={isDownloading}
-                    className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                        <report.icon size={16} />
-                      </div>
-                      <span className="text-sm font-bold text-slate-700">{report.name}</span>
-                    </div>
-                    <Download size={18} className="text-slate-400" />
-                  </button>
-                ))}
-              </div>
+          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
+            <div className="h-full bg-indigo-500" style={{ width: '55%' }} />
+            <div className="h-full bg-pink-500" style={{ width: '45%' }} />
+          </div>
+          <div className="flex justify-between mt-3">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-indigo-500" />
+              <span className="text-xs font-medium text-slate-600">Male (55%)</span>
             </div>
-
-            {/* Financial Reports */}
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Financial Reports</h3>
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                {[
-                  { name: 'Settlement / Payout Report', icon: Wallet },
-                  { name: 'GST / Tax Report', icon: FileSpreadsheet },
-                  { name: 'Refund Report', icon: AlertCircle },
-                ].map((report, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => handleDownload(report.name)}
-                    disabled={isDownloading}
-                    className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-                        <report.icon size={16} />
-                      </div>
-                      <span className="text-sm font-bold text-slate-700">{report.name}</span>
-                    </div>
-                    <Download size={18} className="text-slate-400" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Customer & Operational Reports */}
-            <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 px-1">Other Reports</h3>
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
-                {[
-                  { name: 'Customer Data Export', icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                  { name: 'Time-Based Sales Report', icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
-                  { name: 'Payment Mode Report', icon: Wallet, color: 'text-purple-600', bg: 'bg-purple-50' },
-                  { name: 'Category Performance Report', icon: PieChart, color: 'text-rose-600', bg: 'bg-rose-50' },
-                ].map((report, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => handleDownload(report.name)}
-                    disabled={isDownloading}
-                    className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full ${report.bg} flex items-center justify-center ${report.color}`}>
-                        <report.icon size={16} />
-                      </div>
-                      <span className="text-sm font-bold text-slate-700">{report.name}</span>
-                    </div>
-                    <Download size={18} className="text-slate-400" />
-                  </button>
-                ))}
-              </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-pink-500" />
+              <span className="text-xs font-medium text-slate-600">Female (45%)</span>
             </div>
           </div>
-        </section>
+        </div>
+
+        {/* Order Analytics */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <h3 className="text-[15px] font-semibold text-slate-900 mb-5">Order Analytics</h3>
+          
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+              <div className="flex items-center gap-2 text-slate-500 mb-1">
+                <ShoppingBag size={14} />
+                <span className="text-xs font-medium uppercase tracking-wider">Total</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900">1,245</h3>
+            </div>
+            <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100">
+              <div className="flex items-center gap-2 text-emerald-600 mb-1">
+                <CheckCircle2 size={14} />
+                <span className="text-xs font-medium uppercase tracking-wider">Completed</span>
+              </div>
+              <h3 className="text-xl font-bold text-emerald-700">1,180</h3>
+            </div>
+            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+              <div className="flex items-center gap-2 text-amber-600 mb-1">
+                <Clock size={14} />
+                <span className="text-xs font-medium uppercase tracking-wider">Delayed</span>
+              </div>
+              <h3 className="text-xl font-bold text-amber-700">42</h3>
+            </div>
+            <div className="bg-rose-50 rounded-2xl p-4 border border-rose-100">
+              <div className="flex items-center gap-2 text-rose-600 mb-1">
+                <XCircle size={14} />
+                <span className="text-xs font-medium uppercase tracking-wider">Cancelled</span>
+              </div>
+              <h3 className="text-xl font-bold text-rose-700">23</h3>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-slate-600">
+              <AlertCircle size={16} />
+              <span className="text-[14px] font-medium">Cancellation Rate</span>
+            </div>
+            <h3 className="text-lg font-bold text-rose-500">1.8%</h3>
+          </div>
+        </div>
+
+        {/* Time-Based Insights */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="mb-6">
+            <h3 className="text-[15px] font-semibold text-slate-900">Time-Based Insights</h3>
+            <p className="text-xs text-slate-500 mt-1">Order volume during different times of day</p>
+          </div>
+          
+          <div className="space-y-3">
+            {timeBasedData.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 ${item.bg} ${item.color} rounded-full flex items-center justify-center`}>
+                    <item.icon size={18} />
+                  </div>
+                  <div>
+                    <h4 className="text-[14px] font-semibold text-slate-900">{item.label}</h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{item.time}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">{item.revenue}</p>
+                  <p className="text-[11px] font-medium text-slate-500 mt-0.5">{item.orders} orders</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Category Contribution */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">Category Contribution</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Revenue by main categories</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
+              <PieChart size={16} />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {categoryData.map((item, idx) => (
+              <div key={idx} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${item.color.split(' ')[0].replace('bg-', 'bg-').replace('-100', '-500')}`} />
+                    <span className="text-sm font-medium text-slate-700">{item.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-medium text-slate-500">{item.percent}</span>
+                    <span className="text-sm font-semibold text-slate-900">{item.amount}</span>
+                  </div>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full ${item.color.split(' ')[0].replace('bg-', 'bg-').replace('-100', '-500')}`} 
+                    style={{ width: item.percent }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sub-Category Contribution */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">Sub-Category Contribution</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Revenue by sub-categories</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
+              <PieChart size={16} />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {subCategoryData.map((item, idx) => (
+              <div key={idx} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${item.color.split(' ')[0].replace('bg-', 'bg-').replace('-100', '-500')}`} />
+                    <span className="text-sm font-medium text-slate-700">{item.label}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-medium text-slate-500">{item.percent}</span>
+                    <span className="text-sm font-semibold text-slate-900">{item.amount}</span>
+                  </div>
+                </div>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full ${item.color.split(' ')[0].replace('bg-', 'bg-').replace('-100', '-500')}`} 
+                    style={{ width: item.percent }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Top Items Revenue */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">Top Items Revenue</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Best performing food items</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
+              <List size={16} />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {foodItemsData.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    #{idx + 1}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">{item.name}</h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] font-medium text-slate-500">{item.category}</span>
+                      <span className="w-1 h-1 rounded-full bg-slate-300" />
+                      <span className="text-[11px] font-medium text-slate-500">{item.quantity} sold</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-slate-900">{item.revenue}</p>
+                  <p className="text-[11px] font-medium text-emerald-600 mt-0.5">{item.percent} of total</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          <button className="w-full mt-4 py-3 text-sm font-semibold text-blue-600 bg-blue-50 rounded-xl active:scale-[0.98] transition-transform">
+            View All Items
+          </button>
+        </div>
+
+        {/* Worst Performing Items */}
+        <div className="bg-[#FFFFFF] rounded-[20px] p-5 border border-slate-100 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-[15px] font-semibold text-slate-900">Worst Performing Items</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Items with lowest sales volume</p>
+            </div>
+            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
+              <List size={16} />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {worstItemsData.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs">
+                    #{idx + 1}
+                  </div>
+                  <div>
+                    <h4 className="text-[13px] font-bold text-slate-900">{item.name}</h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] font-medium text-slate-500">{item.category}</span>
+                      <span className="w-1 h-1 rounded-full bg-slate-300" />
+                      <span className="text-[11px] font-medium text-slate-500">{item.quantity} sold</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[13px] font-bold text-slate-900">{item.revenue}</p>
+                  <p className="text-[11px] font-medium text-slate-500 mt-0.5">{item.percent} of total</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
       </div>
-
-      {/* Loading Overlay for Download */}
-      {isDownloading && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/20 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-white rounded-2xl p-6 shadow-xl flex flex-col items-center max-w-[200px]">
-            <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-            <p className="text-sm font-bold text-slate-900 text-center">Generating Report...</p>
-            <p className="text-xs text-slate-500 text-center mt-1">Please wait</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

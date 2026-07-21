@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, RefreshCw, ArrowRight } from 'lucide-react';
-import { getSmartBusinessInsight } from '../services/geminiService';
+import { getSmartBusinessInsight } from '@/services/geminiService';
 
 interface SmartInsightProps {
   isOnline: boolean;

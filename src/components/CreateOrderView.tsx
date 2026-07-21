@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { VoiceSearchModal } from './VoiceSearchModal';
 import { SAMPLE_ITEMS, MenuItem } from './MenuView';
-import { printKOT, printInvoice } from '../lib/print';
+import { printKOT, printInvoice } from '@/lib/print';
 
 const getCategoryIcon = (category: string) => {
   switch (category.toLowerCase()) {
