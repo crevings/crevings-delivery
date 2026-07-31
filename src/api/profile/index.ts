@@ -41,14 +41,13 @@ export const usePartnerProfile = () => {
 };
 
 export const updatePartnerStatus = async (status: "Active" | "Offline" | "Busy") => {
-  const response = await fetch(`${BASE_URL}/delivery/profile/status`, {
-    method: "PATCH",
+  const response = await fetch(`${BASE_URL}/delivery/toggle-online`, {
+    method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${localStorage.getItem("delivery_token") || ""}`,
     },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ isOnline: status === "Active" }),
   });
 
   const data = await response.json();

@@ -331,7 +331,7 @@ export const AnalyticsView: React.FC<{ onBack?: () => void }> = ({ onBack }) => 
                   <div className="w-12 h-12 bg-[#FFFFFF]/10 rounded-2xl flex items-center justify-center text-blue-400 border border-white/5">
                      <Sparkles size={24} fill="currentColor" />
                   </div>
-                  <h4 className="text-white font-black text-xl tracking-tight leading-none uppercase italic">Gemini Insights</h4>
+                  <h4 className="text-white font-black text-xl tracking-tight leading-none uppercase italic">Smart Insights</h4>
                </div>
                <div className="bg-blue-500 text-white px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest">Live Analysis</div>
             </div>

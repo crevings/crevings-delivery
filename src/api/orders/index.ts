@@ -4,18 +4,19 @@ import { fetcher, BASE_URL } from "../fetcher";
 import { INITIAL_ORDERS, INITIAL_PAST_ORDERS } from "@/data/orders";
 
 export const useActiveOrders = () => {
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+  const { data, error, isLoading, mutate } = useSWR<any>(
     "/delivery/orders/active",
     fetcher,
     {
-      fallbackData: INITIAL_ORDERS,
       revalidateOnMount: true,
       revalidateOnFocus: false,
     }
   );
 
+  const orders = Array.isArray(data) ? data : (data?.orders || []);
+
   return {
-    activeOrders: data || INITIAL_ORDERS,
+    activeOrders: orders,
     isLoading,
     isError: error,
     mutate,
@@ -23,18 +24,19 @@ export const useActiveOrders = () => {
 };
 
 export const useOrderHistory = () => {
-  const { data, error, isLoading, mutate } = useSWR<Order[]>(
+  const { data, error, isLoading, mutate } = useSWR<any>(
     "/delivery/orders/history",
     fetcher,
     {
-      fallbackData: INITIAL_PAST_ORDERS,
       revalidateOnMount: true,
       revalidateOnFocus: false,
     }
   );
 
+  const orders = Array.isArray(data) ? data : (data?.orders || []);
+
   return {
-    orderHistory: data || INITIAL_PAST_ORDERS,
+    orderHistory: orders,
     isLoading,
     isError: error,
     mutate,
@@ -47,7 +49,6 @@ export const updateOrderStatus = async (orderId: string, status: string) => {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${localStorage.getItem("delivery_token") || ""}`,
     },
     body: JSON.stringify({ status }),
   });

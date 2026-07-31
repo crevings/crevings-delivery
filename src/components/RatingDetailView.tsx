@@ -330,7 +330,7 @@ export const RatingDetailView: React.FC<{ onBack?: () => void }> = ({ onBack }) 
                   </div>
                   <div>
                     <h4 className="text-white font-black text-2xl tracking-tight leading-none uppercase italic">Sentiment Analysis</h4>
-                    <p className="text-indigo-300/60 text-[10px] font-black uppercase tracking-widest mt-2 px-1">Powered by Gemini AI</p>
+                    <p className="text-indigo-300/60 text-[10px] font-black uppercase tracking-widest mt-2 px-1">Powered by Crevings Intelligence</p>
                   </div>
                </div>
             </div>

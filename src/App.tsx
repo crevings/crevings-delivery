@@ -46,6 +46,7 @@ import { ManageBillingView } from '@/components/ManageBillingView';
 import { StoreAndStaffManagementView } from '@/components/StoreAndStaffManagementView';
 import { RatingDetailView } from '@/components/RatingDetailView';
 import { Tab, Order } from '@/types';
+import { ActiveOrderCard } from '@/components/ActiveOrderCard';
 import { HashRouter } from 'react-router-dom';
 import { Bell, Mic, AlertTriangle, MapPin, Image as ImageIcon, Phone, X, CheckCircle, Clock } from 'lucide-react';
 
@@ -77,18 +78,101 @@ import { ProfileDetailsView } from './components/ProfileDetailsView';
 import { VehicleDetailsView } from './components/VehicleDetailsView';
 import { PersonalDocumentsView } from './components/PersonalDocumentsView';
 
+import { useLocationManager } from './hooks/useLocationManager';
+import { LocationPermissionModal } from './components/LocationPermissionModal';
+
 const App: React.FC = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  
+  // Continuous Location Tracking & Non-Removable Permission Manager
+  const { hasPermission: hasLocationPermission, errorMsg: locationErrorMsg, retryLocationAccess } = useLocationManager(isLoggedIn);
   const [isOnboarding, setIsOnboarding] = useState(false);
   const [showingPartnerVideo, setShowingPartnerVideo] = useState(false);
   const [isSupport, setIsSupport] = useState(false);
   const [currentTab, setCurrentTab] = useState<Tab>(Tab.HOME);
-  const [isOnline, setIsOnline] = useState(true);
+  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+
+  // Check authentication status via HTTP-only cookie on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { BASE_URL } = await import('./api/fetcher');
+        const res = await fetch(`${BASE_URL}/delivery/auth/verify-token`, {
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setIsLoggedIn(true);
+          // Fetch active orders for logged in delivery partner
+          fetchActiveOrder();
+        } else {
+          setIsLoggedIn(false);
+        }
+      } catch (err) {
+        setIsLoggedIn(false);
+      } finally {
+        setIsInitialLoading(false);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  // Real-time GPS location update (pushes live coordinates to Redis Pub/Sub for consumer tracking)
+  useEffect(() => {
+    let watchId: number | null = null;
+    if (isLoggedIn && isOnline && 'geolocation' in navigator) {
+      watchId = navigator.geolocation.watchPosition(
+        async (position) => {
+          try {
+            const { lat, lng } = { lat: position.coords.latitude, lng: position.coords.longitude };
+            const { BASE_URL } = await import('./api/fetcher');
+            await fetch(`${BASE_URL}/delivery/location`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ lat, lng }),
+              credentials: 'include'
+            });
+          } catch (_) {}
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+      );
+    }
+    return () => {
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
+  }, [isLoggedIn, isOnline]);
+
+  const fetchActiveOrder = async () => {
+    try {
+      const { BASE_URL } = await import('./api/fetcher');
+      const res = await fetch(`${BASE_URL}/delivery/orders/active`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.orders) && data.orders.length > 0) {
+        setActiveOrder(data.orders[0]);
+      } else {
+        setActiveOrder(null);
+      }
+    } catch (e) {
+      console.error("Failed to fetch active order:", e);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { logout } = await import('./api/auth');
+      await logout();
+    } catch (_) {}
+    setIsLoggedIn(false);
+  };
   const [rushHour, setRushHour] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState(BRANCHES[0]);
   const [quickOrderType, setQuickOrderType] = useState<'Offline Orders' | 'Dine-in' | null>(null);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showSnackbar, setShowSnackbar] = useState(true);
@@ -110,7 +194,7 @@ const App: React.FC = () => {
       const endTime = new Date();
       endTime.setHours(endTime.getHours() + bookedSlots.length * 2);
       setGigEndTime(endTime);
-      
+
       const startTime = new Date();
       startTime.setMinutes(startTime.getMinutes() + 25);
       setGigStartTime(startTime);
@@ -132,9 +216,9 @@ const App: React.FC = () => {
   }, [gigEndTime]);
 
   const HOURS_SLOTS = [
-    '01:00 AM - 03:00 AM', '03:00 AM - 05:00 AM', '05:00 AM - 07:00 AM', 
-    '07:00 AM - 09:00 AM', '09:00 AM - 11:00 AM', '11:00 AM - 01:00 PM', 
-    '01:00 PM - 03:00 PM', '03:00 PM - 05:00 PM', '05:00 PM - 07:00 PM', 
+    '01:00 AM - 03:00 AM', '03:00 AM - 05:00 AM', '05:00 AM - 07:00 AM',
+    '07:00 AM - 09:00 AM', '09:00 AM - 11:00 AM', '11:00 AM - 01:00 PM',
+    '01:00 PM - 03:00 PM', '03:00 PM - 05:00 PM', '05:00 PM - 07:00 PM',
     '07:00 PM - 09:00 PM', '09:00 PM - 11:00 PM', '11:00 PM - 01:00 AM'
   ];
 
@@ -188,7 +272,7 @@ const App: React.FC = () => {
       revenue: '₹35,000'
     }
   ]);
-  const [trackingDetails, setTrackingDetails] = useState<{type: 'Delivery'|'Takeaway', paymentMethod: 'UPI'|'COD'}>({type: 'Delivery', paymentMethod: 'UPI'});
+  const [trackingDetails, setTrackingDetails] = useState<{ type: 'Delivery' | 'Takeaway', paymentMethod: 'UPI' | 'COD' }>({ type: 'Delivery', paymentMethod: 'UPI' });
   const [outletServices, setOutletServices] = useState({
     delivery: true,
     takeaway: true,
@@ -259,11 +343,11 @@ const App: React.FC = () => {
     switch (currentTab) {
       case Tab.HOME:
         return (
-          <Dashboard 
+          <Dashboard
             orders={orders}
             onAddOrder={handleAddOrder}
             onUpdateOrderStatus={handleUpdateOrderStatus}
-            onNavigateToOrders={() => handleTabChange(Tab.ORDERS)} 
+            onNavigateToOrders={() => handleTabChange(Tab.ORDERS)}
             onNavigateToTables={() => handleTabChange(Tab.TABLES)}
             onQuickOrder={(type) => setQuickOrderType(type)}
             onCreateOrder={() => handleTabChange(Tab.CREATE_ORDER)}
@@ -279,10 +363,10 @@ const App: React.FC = () => {
           />
         );
       case Tab.ORDERS:
-        return <OrdersView 
-          orders={orders} 
-          onUpdateOrderStatus={handleUpdateOrderStatus} 
-          onUpdateOrder={handleUpdateOrder} 
+        return <OrdersView
+          orders={orders}
+          onUpdateOrderStatus={handleUpdateOrderStatus}
+          onUpdateOrder={handleUpdateOrder}
           selectedOrder={selectedOrder}
           setSelectedOrder={setSelectedOrder}
           onAddMoreItems={(order) => {
@@ -293,11 +377,11 @@ const App: React.FC = () => {
       case Tab.EARNINGS:
         return <EarningsView outletServices={outletServices} />;
       case Tab.CREATE_ORDER:
-        return <CreateOrderView 
+        return <CreateOrderView
           onBack={() => {
             setEditingOrder(null);
             handleTabChange(Tab.HOME);
-          }} 
+          }}
           onCreateOrder={(order) => {
             if (editingOrder) {
               handleUpdateOrder(order);
@@ -307,7 +391,7 @@ const App: React.FC = () => {
             } else {
               handleAddOrder(order);
             }
-          }} 
+          }}
           existingOrder={editingOrder}
         />;
       case Tab.MENU:
@@ -373,39 +457,39 @@ const App: React.FC = () => {
       case Tab.PARTNER_STORE_PRODUCT:
         return <PartnerStoreProductDetailView onBack={() => handleTabChange(Tab.PARTNER_STORE)} onAddToCart={() => handleTabChange(Tab.PARTNER_STORE_CHECKOUT)} />;
       case Tab.PARTNER_STORE_CHECKOUT:
-        return <PartnerStoreCheckoutView 
-          onBack={() => handleTabChange(Tab.PARTNER_STORE)} 
+        return <PartnerStoreCheckoutView
+          onBack={() => handleTabChange(Tab.PARTNER_STORE)}
           onTrackOrder={(details) => {
             setTrackingDetails(details);
             handleTabChange(Tab.PARTNER_STORE_TRACKING);
           }}
         />;
       case Tab.PARTNER_STORE_TRACKING:
-        return <PartnerStoreTrackingView 
+        return <PartnerStoreTrackingView
           onBack={() => handleTabChange(Tab.PARTNER_STORE)}
           orderType={trackingDetails.type}
           paymentMethod={trackingDetails.paymentMethod}
         />;
       case Tab.PIN_ON_MAP:
-        return <PinOnMapView 
-          onBack={() => handleTabChange(Tab.OUTLET_INFO)} 
+        return <PinOnMapView
+          onBack={() => handleTabChange(Tab.OUTLET_INFO)}
         />;
       case Tab.SUPPORT:
-        return <SupportView 
+        return <SupportView
           onBack={() => { handleTabChange(Tab.PROFILE); }}
         />;
       case Tab.CREVINGS_STUDIO:
-        return <CrevingsStudioView 
+        return <CrevingsStudioView
           onBack={() => { handleTabChange(Tab.PROFILE); }}
         />;
       case Tab.CREVINGS_LEGAL:
-        return <CrevingsLegalView 
+        return <CrevingsLegalView
           onBack={() => { handleTabChange(Tab.PROFILE); }}
         />;
       case Tab.PROFILE:
-        return <ProfileView 
-          onNavigateToTab={handleTabChange} 
-          onLogout={() => setIsLoggedIn(false)}
+        return <ProfileView
+          onNavigateToTab={handleTabChange}
+          onLogout={handleLogout}
         />;
       case Tab.PROFILE_DETAILS:
         return <ProfileDetailsView onBack={() => handleTabChange(Tab.PROFILE)} />;
@@ -424,9 +508,9 @@ const App: React.FC = () => {
 
   if (!isLoggedIn) {
     if (showingPartnerVideo) {
-      return <PartnerVideoView 
-        onComplete={() => { setShowingPartnerVideo(false); setIsOnboarding(true); }} 
-        onCancel={() => setShowingPartnerVideo(false)} 
+      return <PartnerVideoView
+        onComplete={() => { setShowingPartnerVideo(false); setIsOnboarding(true); }}
+        onCancel={() => setShowingPartnerVideo(false)}
       />;
     }
     if (isOnboarding) {
@@ -449,7 +533,7 @@ const App: React.FC = () => {
           </div>
           <div className="w-8 h-8 rounded-full bg-slate-200 animate-pulse" />
         </div>
-        
+
         {/* Content Skeleton */}
         <div className="p-4 space-y-4 flex-1">
           <div className="w-full h-32 bg-[#FFFFFF] rounded-2xl border border-slate-100 animate-pulse" />
@@ -465,10 +549,18 @@ const App: React.FC = () => {
 
   return (
     <HashRouter>
+      {/* Non-Removable Full Page Location Access Warning Modal */}
+      {!hasLocationPermission && (
+        <LocationPermissionModal
+          errorMsg={locationErrorMsg}
+          onRetry={retryLocationAccess}
+        />
+      )}
+
       <div className="min-h-screen bg-[#FFFFFF] relative z-10 overflow-x-hidden lg:flex lg:bg-[#FFFFFF]">
-        <SideNav 
-          currentTab={currentTab} 
-          onTabChange={handleTabChange} 
+        <SideNav
+          currentTab={currentTab}
+          onTabChange={handleTabChange}
           activeOrdersCount={orders.filter(o => o.status !== 'Completed').length}
           onLogout={() => setIsLoggedIn(false)}
           outletServices={outletServices}
@@ -476,45 +568,45 @@ const App: React.FC = () => {
 
         <div className="flex-1 flex flex-col min-h-screen w-full lg:px-8 bg-[#FFFFFF] lg:bg-transparent">
           <div className={`lg:mt-6 lg:mb-6 ${showHeader ? '' : 'hidden lg:block'}`}>
-            <Header 
+            <Header
               title={
                 currentTab === Tab.HOME ? 'Dashboard' :
-                currentTab === Tab.ORDERS ? 'Orders' :
-                currentTab === Tab.EARNINGS ? 'Payout' :
-                currentTab === Tab.TABLES ? 'Tables' :
-                currentTab === Tab.MENU ? 'Menu' :
-                currentTab === Tab.INVENTORY ? 'Inventory Management' :
-                currentTab === Tab.RECIPE ? 'Recipe Management' :
-                currentTab === Tab.SUBSCRIPTION ? 'Subscription' :
-                currentTab === Tab.SETTINGS ? 'Settings' :
-                currentTab === Tab.ADS_MARKETING ? 'Ads & Marketing' :
-                currentTab === Tab.OFFERS ? 'Offers' :
-                currentTab === Tab.CREATE_OFFER ? 'Create Offer' :
-                currentTab === Tab.OUTLET ? 'Store Settings' :
-                currentTab === Tab.OUTLET_INFO ? 'Outlet Info' :
-                currentTab === Tab.OWNER_INFO ? 'Owner Info' :
-                currentTab === Tab.OPENING_HOURS ? 'Opening Hours' :
-                currentTab === Tab.DIGITAL_MENU ? 'Digital Menu' :
-                currentTab === Tab.UPLOAD_BANNERS ? 'Upload Banners' :
-                currentTab === Tab.BANK_ACCOUNTS ? 'Bank Accounts' :
-                currentTab === Tab.BUSINESS_DOCS ? 'Business Documents' :
-                currentTab === Tab.NOTIFICATIONS ? 'Notifications' :
-                currentTab === Tab.INTEGRATIONS ? 'Integrations' :
-                currentTab === Tab.SALES_REPORT ? 'Sales Report' :
-                currentTab === Tab.REFUNDS ? 'Refunds' :
-                currentTab === Tab.CUSTOMER_DATA ? 'Customer Info' :
-                currentTab === Tab.ANALYTICS ? 'Analytics' :
-                currentTab === Tab.CUSTOMER_RATINGS ? 'Customer Ratings' :
-                currentTab === Tab.RELATIONSHIP_MANAGER ? 'Relationship Manager' :
-                currentTab === Tab.BUSINESS_SETUP ? 'Outlet Settings' :
-                currentTab === Tab.PARTNER_STORE ? 'Partner Store' :
-                currentTab === Tab.PARTNER_STORE_PRODUCT ? 'Product Details' :
-                currentTab === Tab.PARTNER_STORE_CHECKOUT ? 'Checkout' :
-                currentTab === Tab.PARTNER_STORE_TRACKING ? 'Track Order' :
-                currentTab === Tab.CREATE_ORDER ? 'Create Order' : 
-                currentTab === Tab.PROFILE_DETAILS ? 'Profile Details' :
-                currentTab === Tab.VEHICLE_DETAILS ? 'Vehicle Details' :
-                currentTab === Tab.PERSONAL_DOCUMENTS ? 'Personal Documents' : 'Dashboard'
+                  currentTab === Tab.ORDERS ? 'Orders' :
+                    currentTab === Tab.EARNINGS ? 'Payout' :
+                      currentTab === Tab.TABLES ? 'Tables' :
+                        currentTab === Tab.MENU ? 'Menu' :
+                          currentTab === Tab.INVENTORY ? 'Inventory Management' :
+                            currentTab === Tab.RECIPE ? 'Recipe Management' :
+                              currentTab === Tab.SUBSCRIPTION ? 'Subscription' :
+                                currentTab === Tab.SETTINGS ? 'Settings' :
+                                  currentTab === Tab.ADS_MARKETING ? 'Ads & Marketing' :
+                                    currentTab === Tab.OFFERS ? 'Offers' :
+                                      currentTab === Tab.CREATE_OFFER ? 'Create Offer' :
+                                        currentTab === Tab.OUTLET ? 'Store Settings' :
+                                          currentTab === Tab.OUTLET_INFO ? 'Outlet Info' :
+                                            currentTab === Tab.OWNER_INFO ? 'Owner Info' :
+                                              currentTab === Tab.OPENING_HOURS ? 'Opening Hours' :
+                                                currentTab === Tab.DIGITAL_MENU ? 'Digital Menu' :
+                                                  currentTab === Tab.UPLOAD_BANNERS ? 'Upload Banners' :
+                                                    currentTab === Tab.BANK_ACCOUNTS ? 'Bank Accounts' :
+                                                      currentTab === Tab.BUSINESS_DOCS ? 'Business Documents' :
+                                                        currentTab === Tab.NOTIFICATIONS ? 'Notifications' :
+                                                          currentTab === Tab.INTEGRATIONS ? 'Integrations' :
+                                                            currentTab === Tab.SALES_REPORT ? 'Sales Report' :
+                                                              currentTab === Tab.REFUNDS ? 'Refunds' :
+                                                                currentTab === Tab.CUSTOMER_DATA ? 'Customer Info' :
+                                                                  currentTab === Tab.ANALYTICS ? 'Analytics' :
+                                                                    currentTab === Tab.CUSTOMER_RATINGS ? 'Customer Ratings' :
+                                                                      currentTab === Tab.RELATIONSHIP_MANAGER ? 'Relationship Manager' :
+                                                                        currentTab === Tab.BUSINESS_SETUP ? 'Outlet Settings' :
+                                                                          currentTab === Tab.PARTNER_STORE ? 'Partner Store' :
+                                                                            currentTab === Tab.PARTNER_STORE_PRODUCT ? 'Product Details' :
+                                                                              currentTab === Tab.PARTNER_STORE_CHECKOUT ? 'Checkout' :
+                                                                                currentTab === Tab.PARTNER_STORE_TRACKING ? 'Track Order' :
+                                                                                  currentTab === Tab.CREATE_ORDER ? 'Create Order' :
+                                                                                    currentTab === Tab.PROFILE_DETAILS ? 'Profile Details' :
+                                                                                      currentTab === Tab.VEHICLE_DETAILS ? 'Vehicle Details' :
+                                                                                        currentTab === Tab.PERSONAL_DOCUMENTS ? 'Personal Documents' : 'Dashboard'
               }
               onProfileClick={() => handleTabChange(Tab.PROFILE)}
               onNotificationClick={() => handleTabChange(Tab.NOTIFICATIONS)}
@@ -531,7 +623,7 @@ const App: React.FC = () => {
               isGigActive={!!gigEndTime}
             />
           </div>
-          
+
           <main className="flex-1 max-w-md mx-auto w-full relative lg:max-w-none lg:w-full flex flex-col">
             <div className="flex-1 transition-opacity duration-300 relative flex flex-col">
               {renderContent()}
@@ -541,50 +633,31 @@ const App: React.FC = () => {
 
         {showBottomNav && (
           <div className="lg:hidden">
-            <BottomNav 
-              currentTab={currentTab} 
-              onTabChange={handleTabChange} 
+            <BottomNav
+              currentTab={currentTab}
+              onTabChange={handleTabChange}
               activeOrdersCount={orders.filter(o => o.status !== 'Completed').length}
               outletServices={outletServices}
             />
           </div>
         )}
 
-        {/* Floating New Order Snackbar */}
-        {showSnackbar && currentTab === Tab.HOME && (
-          <div className="fixed bottom-[90px] left-4 right-4 z-50 max-w-md mx-auto">
-            <div className="h-[72px] rounded-[20px] bg-gradient-to-r from-[#1E90FF] to-[#1D4ED8] p-[16px] shadow-sm flex items-center justify-between">
-              {/* Left side: dot */}
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-[#FFFFFF] animate-pulse" />
-                
-                {/* Center: Text content */}
-                <div className="flex flex-col">
-                  <span className="text-[16px] font-semibold text-white leading-tight">Incoming Order</span>
-                  <span className="text-[13px] text-white/80 leading-tight mt-0.5">1 waiting to confirm</span>
-                </div>
-              </div>
-
-              {/* Right side: Action button */}
-              <button 
-                onClick={() => {
-                  setCurrentTab(Tab.ORDERS);
-                  setShowSnackbar(false);
-                }}
-                className="h-[36px] px-[16px] rounded-[18px] bg-[#FFFFFF] text-[#1E90FF] text-[14px] font-medium active:scale-95 transition-transform"
-              >
-                Review
-              </button>
-            </div>
-          </div>
+        {/* Floating Active Order Persistence Card */}
+        {activeOrder && (
+          <ActiveOrderCard
+            order={activeOrder}
+            onOpenDetails={(order) => {
+              setSelectedOrder(order);
+            }}
+          />
         )}
 
         {/* Quick Order Overlay */}
         {quickOrderType && (
-            <OfflineOrdersView 
-                type={quickOrderType} 
-                onBack={() => setQuickOrderType(null)} 
-            />
+          <OfflineOrdersView
+            type={quickOrderType}
+            onBack={() => setQuickOrderType(null)}
+          />
         )}
 
         {/* Permissions Bottom Sheet Flow */}
@@ -609,12 +682,12 @@ const App: React.FC = () => {
                 {permissionStep === 'mic' && 'Microphone access enables voice search and quick voice notes for order instructions.'}
                 {permissionStep === 'contact' && 'Please provide your contact number for important account alerts and customer support communication.'}
               </p>
-              
+
               {permissionStep === 'contact' && (
                 <div className="w-full mb-6 text-left">
                   <label className="block text-[13px] font-medium text-slate-600 mb-1.5 ml-1">Mobile Number</label>
-                  <input 
-                    type="tel" 
+                  <input
+                    type="tel"
                     value={contactNumber}
                     onChange={(e) => setContactNumber(e.target.value)}
                     placeholder="Enter 10-digit number"
@@ -624,14 +697,14 @@ const App: React.FC = () => {
               )}
 
               <div className="w-full space-y-3">
-                <button 
+                <button
                   onClick={handleNextPermission}
                   disabled={permissionStep === 'contact' && contactNumber.length < 10}
                   className={`w-full h-12 rounded-xl font-semibold text-[15px] active:scale-[0.98] transition-all shadow-sm ${permissionStep === 'contact' && contactNumber.length < 10 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-[#1E90FF] text-white'}`}
                 >
                   {permissionStep === 'contact' ? 'Save' : 'Allow'}
                 </button>
-                <button 
+                <button
                   onClick={handleNextPermission}
                   className="w-full h-12 bg-slate-50 text-slate-500 rounded-xl font-medium text-[15px] active:bg-slate-100 transition-all"
                 >
@@ -646,11 +719,11 @@ const App: React.FC = () => {
       {/* Book Hours Bottom Sheet */}
       {/* Confirm Slots Sheet */}
       {showConfirmSlotsSheet && (
-        <div 
+        <div
           className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 sm:items-center transition-opacity"
           onClick={() => setShowConfirmSlotsSheet(false)}
         >
-          <div 
+          <div
             className="w-full bg-[#FFFFFF] rounded-t-3xl sm:rounded-3xl sm:max-w-md overflow-hidden flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:fade-in duration-300 relative"
             onClick={e => e.stopPropagation()}
           >
@@ -663,7 +736,7 @@ const App: React.FC = () => {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto w-full flex-1 no-scrollbar space-y-4">
               <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl flex items-start gap-3 border border-emerald-100">
                 <CheckCircle size={24} className="shrink-0 text-emerald-600 mt-0.5" />
@@ -687,9 +760,9 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 pt-4 border-t border-slate-100 shrink-0 bg-white">
-              <button 
+              <button
                 onClick={handleFinalConfirmSlots}
                 className="w-full h-[52px] font-black rounded-2xl text-[15px] tracking-wider uppercase transition-all active:scale-95 bg-emerald-500 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)]"
               >
@@ -702,11 +775,11 @@ const App: React.FC = () => {
 
       {/* Book Working Hours Bottom Sheet */}
       {showBookHours && (
-        <div 
+        <div
           className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 sm:items-center transition-opacity"
           onClick={() => setShowBookHours(false)}
         >
-          <div 
+          <div
             className="w-full bg-[#FFFFFF] rounded-t-3xl sm:rounded-3xl sm:max-w-md overflow-hidden flex flex-col max-h-[85vh] animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:fade-in duration-300 relative"
             onClick={e => e.stopPropagation()}
           >
@@ -719,7 +792,7 @@ const App: React.FC = () => {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto w-full flex-1 no-scrollbar space-y-3">
               {HOURS_SLOTS.map((slot) => {
                 const isSelected = bookedSlots.includes(slot);
@@ -737,15 +810,15 @@ const App: React.FC = () => {
                   >
                     <span className={`text-[15px] font-bold tracking-wide ${isSelected ? 'text-blue-700' : 'text-slate-700'}`}>{slot}</span>
                     <div className={`w-6 h-6 rounded-full flex items-center justify-center border-2 ${isSelected ? 'bg-blue-500 border-blue-500 text-white' : 'border-slate-300'}`}>
-                      {isSelected && <svg width="12" height="10" viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.00003 7.8L1.20003 5L0.266693 5.93333L4.00003 9.66667L12 1.66667L11.0667 0.733334L4.00003 7.8Z" fill="white"/></svg>}
+                      {isSelected && <svg width="12" height="10" viewBox="0 0 12 10" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.00003 7.8L1.20003 5L0.266693 5.93333L4.00003 9.66667L12 1.66667L11.0667 0.733334L4.00003 7.8Z" fill="white" /></svg>}
                     </div>
                   </button>
                 );
               })}
             </div>
-            
+
             <div className="p-6 pt-4 border-t border-slate-100 shrink-0 bg-white">
-              <button 
+              <button
                 onClick={handleConfirmSlots}
                 disabled={bookedSlots.length === 0}
                 className={`w-full h-[52px] font-black rounded-2xl text-[15px] tracking-wider uppercase transition-all active:scale-95 ${bookedSlots.length > 0 ? 'bg-[#1E90FF] text-white' : 'bg-slate-200 text-slate-400'}`}
@@ -757,7 +830,8 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         body {
           background-color: #FFFFFF;
           -webkit-tap-highlight-color: transparent;

@@ -9,7 +9,7 @@ export const useVerifyToken = () => {
 };
 
 export const login = async (payload: any) => {
-  const response = await fetch(`${BASE_URL}/delivery/auth/login`, {
+  const response = await fetch(`${BASE_URL}/delivery/auth/verify-otp`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -22,14 +22,10 @@ export const login = async (payload: any) => {
   if (!response.ok || !data.success) {
     throw new Error(data.message || "Failed to log in.");
   }
-  if (data.token) {
-    localStorage.setItem("delivery_token", data.token);
-  }
   return data;
 };
 
 export const logout = async () => {
-  localStorage.removeItem("delivery_token");
   const response = await fetch(`${BASE_URL}/delivery/auth/logout`, {
     method: "POST",
     credentials: "include",

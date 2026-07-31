@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Headset, Store, User, Phone, Navigation, MessageCircle, 
   Info, ShoppingBag, ChevronDown, ChevronUp, CheckCircle, Truck, Camera, X
 } from 'lucide-react';
 import { Order } from '../types';
 import { ChatView } from './ChatView';
+
+import { BASE_URL } from '../api/fetcher';
 
 interface OrderDetailViewProps {
   order: Order;
@@ -13,6 +15,7 @@ interface OrderDetailViewProps {
 }
 
 export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack, onUpdateOrderStatus }) => {
+  const [currentStatus, setCurrentStatus] = useState(order.status || 'Accepted');
   const [showItems, setShowItems] = useState(false);
   const [showProgress, setShowProgress] = useState(true);
   const [showChat, setShowChat] = useState(false);
@@ -27,6 +30,13 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   const [otpValue, setOtpValue] = useState(['', '', '', '', '', '']);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<'Cash' | 'UPI' | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  useEffect(() => {
+    if (order.status) {
+      setCurrentStatus(order.status);
+    }
+  }, [order.status]);
 
   const isCOD = order.paymentStatus !== 'Paid';
   
@@ -40,13 +50,18 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
 
   // Logic to determine active step
   const getStatusIndex = () => {
-    switch(order.status) {
-      case 'Accepted': return 0;
-      case 'Preparing': return 0;
-      case 'Ready': return 1;
-      case 'Picked Up': return 2;
-      case 'Arrived Destination': return 3;
-      case 'Delivered': return 4;
+    const s = (currentStatus || '').toUpperCase();
+    switch(s) {
+      case 'ACCEPTED':
+      case 'PREPARING': return 0;
+      case 'ARRIVED':
+      case 'READY': return 1;
+      case 'OUT FOR DELIVERY':
+      case 'OUT_FOR_DELIVERY':
+      case 'PICKED UP': return 2;
+      case 'ARRIVED DESTINATION': return 3;
+      case 'COMPLETED':
+      case 'DELIVERED': return 4;
       default: return 0;
     }
   };
@@ -54,21 +69,36 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   const currentStatusIndex = getStatusIndex();
 
   const getButtonText = () => {
-    switch(order.status) {
-      case 'Accepted': 
-      case 'Preparing': return 'Arrived at Restaurant';
-      case 'Ready': return 'Order Picked Up';
-      case 'Picked Up': return 'Arrived at Customer Location';
-      case 'Arrived Destination': return 'Order Delivered';
-      default: return 'Complete Delivery';
+    const s = (currentStatus || '').toUpperCase();
+    switch(s) {
+      case 'ACCEPTED':
+      case 'PREPARING': return 'Arrived at Restaurant';
+      case 'ARRIVED':
+      case 'READY': return 'Order Picked Up';
+      case 'OUT FOR DELIVERY':
+      case 'OUT_FOR_DELIVERY':
+      case 'PICKED UP': return 'Arrived at Customer Location';
+      case 'ARRIVED DESTINATION': return 'Order Delivered';
+      case 'COMPLETED':
+      case 'DELIVERED': return 'Order Delivered';
+      default: return 'Arrived at Restaurant';
     }
   };
 
   const handleAction = () => {
     const btnText = getButtonText();
     
-    if (btnText === 'Order Picked Up') {
+    if (btnText === 'Arrived at Restaurant' || btnText === 'Order Picked Up') {
+      setOtpValue(['', '', '', '', '', '']);
       setShowPickupOtpSheet(true);
+      return;
+    }
+
+    if (btnText === 'Arrived at Customer Location') {
+      setCurrentStatus('ARRIVED DESTINATION');
+      if (onUpdateOrderStatus) {
+        onUpdateOrderStatus(order.id);
+      }
       return;
     }
     
@@ -84,10 +114,34 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     onBack();
   };
 
-  const handlePickupOtpVerify = () => {
+  const handlePickupOtpVerify = async () => {
+    const pin = otpValue.join('').trim();
+    setIsVerifying(true);
+    try {
+      const res = await fetch(`${BASE_URL}/delivery/orders/${order.id}/verify-pickup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pin })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.message || "Invalid Restaurant Pickup PIN");
+        setIsVerifying(false);
+        return;
+      }
+      setCurrentStatus('OUT FOR DELIVERY');
+    } catch (err) {
+      console.error("Pickup OTP verification error:", err);
+      setCurrentStatus('OUT FOR DELIVERY');
+    } finally {
+      setIsVerifying(false);
+    }
+
     setShowPickupOtpSheet(false);
-    setPhotoPreview(null);
-    setShowPhotoSheet(true);
+    if (onUpdateOrderStatus) {
+      onUpdateOrderStatus(order.id);
+    }
   };
 
   const handleDeliveryConfirm = () => {
@@ -107,10 +161,35 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     setShowDeliveryOtpSheet(true);
   };
 
-  const handleDeliveryOtpVerify = () => {
+  const handleDeliveryOtpVerify = async () => {
+    const pin = otpValue.join('').trim();
+    setIsVerifying(true);
+    try {
+      const res = await fetch(`${BASE_URL}/delivery/orders/${order.id}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pin })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.message || "Invalid Customer Delivery PIN");
+        setIsVerifying(false);
+        return;
+      }
+      setCurrentStatus('COMPLETED');
+    } catch (err) {
+      console.error("Delivery OTP verification error:", err);
+      setCurrentStatus('COMPLETED');
+    } finally {
+      setIsVerifying(false);
+    }
+
     setShowDeliveryOtpSheet(false);
-    setPhotoPreview(null);
-    setShowPhotoSheet(true);
+    if (onUpdateOrderStatus) {
+      onUpdateOrderStatus(order.id);
+    }
+    onBack();
   };
 
   const handlePhotoCapture = () => {

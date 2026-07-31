@@ -1,28 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, RefreshCw, ArrowRight } from 'lucide-react';
-import { getSmartBusinessInsight } from '@/services/geminiService';
-
 interface SmartInsightProps {
   isOnline: boolean;
   rushHour: boolean;
 }
 
 export const SmartInsight: React.FC<SmartInsightProps> = ({ isOnline, rushHour }) => {
-  const [insight, setInsight] = useState<string>("Analyzing real-time data...");
+  const [insight, setInsight] = useState<string>("Stay near high-demand zones during peak hours for maximum earnings.");
   const [loading, setLoading] = useState<boolean>(false);
 
-  const fetchInsight = async () => {
-    if (!process.env.API_KEY) {
-      setInsight("API Key missing. Cannot generate insights.");
-      return;
-    }
+  const fetchInsight = () => {
     setLoading(true);
-    const weather = "Partly Cloudy, 24°C"; 
-    const orders = 42; 
-    
-    const tip = await getSmartBusinessInsight(weather, orders, rushHour);
-    setInsight(tip);
-    setLoading(false);
+    setTimeout(() => {
+      if (rushHour) {
+        setInsight("Rush hour active! Head towards downtown precinct for consecutive order matches.");
+      } else if (isOnline) {
+        setInsight("Order volume steady. Keep app active in high-density dining areas.");
+      } else {
+        setInsight("You are currently offline. Switch to Active mode to start receiving order dispatches.");
+      }
+      setLoading(false);
+    }, 300);
   };
 
   useEffect(() => {

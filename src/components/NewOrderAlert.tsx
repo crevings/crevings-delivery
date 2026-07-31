@@ -1,42 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Order } from '../types';
 import { MapPin, Navigation, Map, DollarSign, Crosshair, ChevronLeft } from 'lucide-react';
+import { playOrderAlertSound } from '../utils/audioNotifier';
 
 interface NewOrderAlertProps {
   isOpen: boolean;
   onClose: () => void;
   onAccept: (prepTime: number) => void;
-  onReject?: () => void;
+  onReject?: (reason?: string) => void;
   order: Order;
 }
 
 export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, onAccept, onReject, order }) => {
-  const [timeLeft, setTimeLeft] = useState(15);
   const [rejectStep, setRejectStep] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   
   useEffect(() => {
-    let timer: any;
     if (isOpen && !rejectStep) {
-      setTimeLeft(15);
-      timer = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            onReject && onReject();
-            onClose();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
+      playOrderAlertSound();
     }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [isOpen, rejectStep, onReject, onClose]);
+  }, [isOpen, rejectStep]);
 
-  // Reset state when modal opens/closes
+  // Reset state when the modal opens/closes
   useEffect(() => {
     if (isOpen) {
       setRejectStep(false);
@@ -56,15 +41,8 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
   };
 
   const handleFinalReject = () => {
-    if (onReject) onReject();
+    if (onReject) onReject(rejectReason || 'User rejected');
     onClose();
-  };
-
-  // Color transitions from emerald to red
-  const getTimerColor = () => {
-    if (timeLeft > 10) return 'text-emerald-500';
-    if (timeLeft > 5) return 'text-amber-500';
-    return 'text-rose-500';
   };
 
   const REASONS = [
@@ -93,7 +71,12 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                <div className={`absolute inset-0 bg-emerald-500/10 animate-pulse`}></div>
                
                <div className="relative z-10 w-20 h-20 rounded-full border-4 border-emerald-100 flex items-center justify-center mb-3 bg-white shadow-sm">
-                 <span className={`text-3xl font-black tabular-nums transition-colors duration-500 ${getTimerColor()}`}>{timeLeft}</span>
+                 <div className="text-emerald-500 animate-bounce mt-2">
+                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                     <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                   </svg>
+                 </div>
                </div>
                
                <h2 className="relative z-10 text-xl font-black text-slate-900 tracking-tight uppercase">New Delivery Request</h2>

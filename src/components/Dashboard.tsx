@@ -54,6 +54,8 @@ interface DashboardProps {
   gigStartTime?: Date | null;
 }
 
+import { BASE_URL } from '../api/fetcher';
+
 export const Dashboard: React.FC<DashboardProps> = ({ 
   orders,
   onAddOrder,
@@ -76,6 +78,116 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
 
   const activeOrders = orders.filter(o => o.status !== 'Delivered' && o.status !== 'Cancelled');
+
+  // Poll available orders from backend when online (runs immediately when app opens or reopens)
+  React.useEffect(() => {
+    let interval: any;
+    if (isOnline) {
+      const fetchAvailable = async () => {
+        try {
+          const res = await fetch(`${BASE_URL}/delivery/orders/available`, {
+            credentials: 'include'
+          });
+          const data = await res.json();
+          if (data.success && data.orders && data.orders.length > 0) {
+            const raw = data.orders[0];
+            const formatted: Order = {
+              id: raw.orderId,
+              customer: raw.customerDetails?.name || 'Customer',
+              type: 'Customer Tips',
+              channel: 'Direct',
+              items: `${raw.items?.length || 1} Items`,
+              itemList: (raw.items || []).map((it: any) => ({
+                name: it.name,
+                quantity: it.quantity,
+                price: it.price
+              })),
+              paymentStatus: raw.payment?.status || 'Paid',
+              address: raw.customerDetails?.address || 'Civil Lines, Prayagraj',
+              subtotal: raw.subtotal || 0,
+              tax: raw.tax || 0,
+              discount: raw.discount || 0,
+              total: String(raw.total || '0'),
+              status: 'Incoming',
+              time: '--',
+              customerType: 'Regular',
+              phone: raw.customerDetails?.phone || '+91 98765 43210',
+              customerNote: '',
+              offer: raw.appliedOffer || ''
+            };
+            setPendingOrder(formatted);
+            setShowNewOrderAlert(true);
+          }
+        } catch (err) {
+          // ignore fetch error
+        }
+      };
+      
+      fetchAvailable();
+      interval = setInterval(fetchAvailable, 3000);
+    } else if (!isOnline) {
+      setShowNewOrderAlert(false);
+      setPendingOrder(null);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isOnline]);
+
+  // Connect to SSE stream for real-time dispatch events
+  React.useEffect(() => {
+    if (!isOnline) return;
+
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`${BASE_URL}/delivery/stream`, { withCredentials: true });
+
+      eventSource.addEventListener('dispatch', (e: MessageEvent) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
+            const formatted: Order = {
+              id: payload.orderId,
+              customer: 'New Delivery Request',
+              type: 'Customer Tips',
+              channel: 'Direct',
+              items: 'Delivery Order',
+              itemList: [],
+              paymentStatus: 'Paid',
+              address: payload.restaurantName ? `Pick up at ${payload.restaurantName}` : 'Restaurant Pickup',
+              subtotal: 0,
+              tax: 0,
+              discount: 0,
+              total: '150.00',
+              status: 'Incoming',
+              time: '--',
+              customerType: 'Regular',
+              phone: '',
+              customerNote: '',
+              offer: ''
+            };
+            setPendingOrder(formatted);
+            setShowNewOrderAlert(true);
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    return () => {
+      if (eventSource) eventSource.close();
+    };
+  }, [isOnline]);
+
+  // Force open NewOrderAlert when user clicks "Review" on bottom floating snackbar
+  React.useEffect(() => {
+    const handleForceOpen = () => {
+      setShowNewOrderAlert(true);
+    };
+    window.addEventListener('open_pending_order_alert', handleForceOpen);
+    return () => {
+      window.removeEventListener('open_pending_order_alert', handleForceOpen);
+    };
+  }, []);
 
   const triggerRandomOrder = () => {
     const newOrder: Order = {
@@ -162,16 +274,46 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <NewOrderAlert 
           isOpen={showNewOrderAlert} 
           onClose={() => setShowNewOrderAlert(false)} 
-          onAccept={(prepTime) => {
-            onAddOrder({
+          onAccept={async (prepTime) => {
+            const acceptedOrder = {
               ...pendingOrder,
               time: `${prepTime}:00`,
-              status: 'Preparing'
-            });
+              status: 'Preparing' as const
+            };
+            try {
+              // 1. Send dispatch response ACCEPT event to Inngest
+              await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/respond`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'ACCEPT' }),
+                credentials: 'include'
+              });
+              // 2. Accept order on delivery orders API
+              await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/accept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include'
+              });
+            } catch (err) {
+              console.error("Error accepting order API:", err);
+            }
+            onAddOrder(acceptedOrder);
             setPendingOrder(null);
             setShowNewOrderAlert(false);
           }}
-          onReject={() => {
+          onReject={async (reason) => {
+            try {
+              // Only called when driver explicitly taps the Reject button
+              // Send dispatch response DECLINE event to Inngest
+              await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/respond`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'DECLINE', reason: reason || 'User declined' }),
+                credentials: 'include'
+              });
+            } catch (err) {
+              console.error("Error rejecting order dispatch API:", err);
+            }
             setPendingOrder(null);
             setShowNewOrderAlert(false);
           }}

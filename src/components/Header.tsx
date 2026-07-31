@@ -62,17 +62,8 @@ export const Header: React.FC<HeaderProps> = ({
     <>
     <header className="sticky top-0 z-[60] bg-[#FFFFFF] border-b border-slate-100 flex items-center justify-between h-[64px] px-4 w-full max-w-md mx-auto lg:max-w-none lg:px-6 lg:rounded-2xl lg:border lg:border-slate-200 lg:shadow-sm lg:static lg:h-[80px]">
       
-      {/* Left side (Book gig) */}
+      {/* Left side */}
       <div className="flex items-center gap-3">
-        {onBookHours && (
-          <button 
-            onClick={onBookHours}
-            disabled={isGigActive}
-            className={`h-[32px] px-4 text-white text-[13px] font-bold tracking-wide rounded-[10px] active:scale-95 transition-transform ${isGigActive ? 'bg-slate-300' : 'bg-[#1E90FF]'}`}
-          >
-            {isGigActive ? 'GIG ACTIVE' : 'BOOK GIG'}
-          </button>
-        )}
       </div>
 
       <div className="flex items-center gap-3 lg:gap-4 ml-auto">
