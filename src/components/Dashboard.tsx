@@ -122,9 +122,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             setPendingOrder(formatted);
             setShowNewOrderAlert(true);
           }
-        } catch (_) {}
+        } catch (_) {
+          // ignore parsing error
+        }
       });
-    } catch (_) {}
+    } catch (_) {
+      // ignore connection error
+    }
 
     return () => {
       if (eventSource) eventSource.close();
