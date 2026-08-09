@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, Bell, MessageCircle, MessageSquare, Mail, Phone, 
-  Eye, EyeOff, Volume2, CheckCircle2, Printer, MapPin, Image as ImageIcon, Mic,
+  Eye, EyeOff, Volume2, CheckCircle2, MapPin, Image as ImageIcon, Mic,
   FileText, RefreshCcw, Banknote, ShieldCheck, ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -115,7 +115,7 @@ const PasswordResetFlow = ({ onCancel }: { onCancel: () => void }) => {
             {otp.map((digit, i) => (
               <input 
                 key={i}
-                ref={el => otpRefs.current[i] = el}
+                ref={el => { otpRefs.current[i] = el; }}
                 type="tel"
                 maxLength={1}
                 value={digit}
@@ -265,7 +265,7 @@ const ChangeAccountFlow = ({ type, currentVal, onCancel }: { type: 'Email' | 'Ph
             {otp.map((digit, i) => (
               <input 
                 key={i}
-                ref={el => otpRefs.current[i] = el}
+                ref={el => { otpRefs.current[i] = el; }}
                 type="tel"
                 maxLength={1}
                 value={digit}

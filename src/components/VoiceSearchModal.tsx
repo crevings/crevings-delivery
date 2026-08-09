@@ -11,18 +11,18 @@ export const VoiceSearchModal: React.FC<VoiceSearchModalProps> = ({ isOpen, onCl
   const [isListening, setIsListening] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      setIsListening(true);
-      // Simulate listening for 3 seconds
-      const timer = setTimeout(() => {
-        setIsListening(false);
-        if (onResult) {
-          onResult('Simulated voice input');
-        }
-        onClose();
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
+    if (!isOpen) return;
+
+    setIsListening(true);
+    // Simulate listening for 3 seconds
+    const timer = setTimeout(() => {
+      setIsListening(false);
+      if (onResult) {
+        onResult('Simulated voice input');
+      }
+      onClose();
+    }, 3000);
+    return () => clearTimeout(timer);
   }, [isOpen, onClose, onResult]);
 
   if (!isOpen) return null;

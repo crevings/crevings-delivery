@@ -1,7 +1,5 @@
 import useSWR from "swr";
-import { Order } from "@/types";
 import { fetcher, BASE_URL } from "../fetcher";
-import { INITIAL_ORDERS, INITIAL_PAST_ORDERS } from "@/data/orders";
 
 export const useActiveOrders = () => {
   const { data, error, isLoading, mutate } = useSWR<any>(

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Order } from '../types';
-import { MapPin, Navigation, Map, DollarSign, Crosshair, ChevronLeft } from 'lucide-react';
+import { Navigation, Map, ChevronLeft } from 'lucide-react';
 import { playOrderAlertSound } from '../utils/audioNotifier';
 
 interface NewOrderAlertProps {

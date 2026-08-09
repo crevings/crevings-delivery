@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Geolocation } from '@capacitor/geolocation';
 
 export interface LocationState {
   hasPermission: boolean;
@@ -23,10 +22,11 @@ export function useLocationManager(isLoggedIn: boolean) {
 
     // 1. Try Capacitor Geolocation Plugin (For Native Android/iOS or Capacitor WebView)
     try {
-      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
-        const permResult = await Geolocation.requestPermissions();
+      const capGeo = (window as any).Capacitor?.Plugins?.Geolocation;
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() && capGeo) {
+        const permResult = await capGeo.requestPermissions();
         if (permResult.location === 'granted' || permResult.coarseLocation === 'granted') {
-          const position = await Geolocation.getCurrentPosition({
+          const position = await capGeo.getCurrentPosition({
             enableHighAccuracy: true,
             timeout: 10000,
           });

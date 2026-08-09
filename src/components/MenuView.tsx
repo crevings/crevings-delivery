@@ -1,42 +1,27 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Search, 
-  Mic, 
   Plus, 
   MoreVertical, 
   ChevronDown,
-  ChevronUp,
-  SlidersHorizontal,
   ArrowLeft,
-  Camera,
   Check,
   CheckCircle2,
   Sparkles,
   X,
   ImageIcon,
   Trash2,
-  PlusCircle,
   Flame,
   Trophy,
   ThumbsUp,
   Star,
-  ChevronRight,
-  Info,
-  Layers,
-  IndianRupee,
   UtensilsCrossed,
-  Layout,
-  PlusSquare,
-  Hash,
-  Award,
   Zap,
   Droplets,
   Leaf,
   Heart,
   Pencil,
   AlertCircle,
-  Circle,
-  Egg as EggIcon,
   Loader2,
   Filter
 } from 'lucide-react';
@@ -499,17 +484,6 @@ export const SAMPLE_ITEMS: MenuItem[] = [
   }
 ];
 
-const getCategoryIcon = (category: string) => {
-  switch (category.toLowerCase()) {
-    case 'pizza': return '🍕';
-    case 'sides': return '🍟';
-    case 'beverages': return '🥤';
-    case 'combos': return '🍱';
-    case 'desserts': return '🍰';
-    default: return '';
-  }
-};
-
 export const MenuView: React.FC = () => {
   const [mainTab, setMainTab] = useState<'items' | 'menu' | 'addons'>('items');
   const [items, setItems] = useState<MenuItem[]>(SAMPLE_ITEMS);
@@ -525,7 +499,6 @@ export const MenuView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'edit' | 'create-combo'>('list');
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [activeActionMenuId, setActiveActionMenuId] = useState<number | null>(null);
-  const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
   
   const [categories, setCategories] = useState(['All Categories', 'Lunch', 'Dinner', 'Main Course', 'Combos', 'Toppings']);
   const [subCategories, setSubCategories] = useState(['All Sub Categories', 'Pizza', 'Sides', 'Beverages']);
@@ -539,11 +512,6 @@ export const MenuView: React.FC = () => {
     setItems(items.map(item => 
       item.id === id ? { ...item, isAvailable: !item.isAvailable } : item
     ));
-  };
-
-  const handleDeleteItem = (id: number) => {
-    setItems(items.filter(item => item.id !== id));
-    setItemToDelete(null);
   };
 
   const handleSaveItem = (item: any) => {
@@ -605,7 +573,7 @@ export const MenuView: React.FC = () => {
         subCategories={subCategories.filter(c => c !== 'All Sub Categories')}
         initialItem={editingItem}
         onSave={handleSaveItem}
-        allItems={items}
+
         addonGroups={addonGroups}
       />
     );
@@ -855,7 +823,7 @@ export const MenuView: React.FC = () => {
                            </button>
                            <button 
                              onClick={() => {
-                               setItemToDelete(item);
+                               setItems(items.filter(i => i.id !== item.id));
                                setActiveActionMenuId(null);
                              }}
                              className="w-full px-3 py-2 flex items-center gap-2 text-rose-500 hover:bg-rose-50 transition-colors text-[12px] font-medium border-t border-slate-50"
@@ -1500,9 +1468,8 @@ const CreateItemView: React.FC<{
   subCategories: string[],
   initialItem?: MenuItem | null,
   onSave: (item: any) => void,
-  allItems: MenuItem[],
   addonGroups: {id: string, name: string, type?: 'addon' | 'topping', isRequired?: boolean, isActive: boolean, addons: {id: string, name: string, price: string}[]}[]
-}> = ({ onBack, categories, subCategories, initialItem, onSave, allItems, addonGroups }) => {
+}> = ({ onBack, categories, subCategories, initialItem, onSave, addonGroups }) => {
   const [image, setImage] = useState<string | null>(initialItem?.image || null);
   const [isCropping, setIsCropping] = useState(false);
   const [name, setName] = useState(initialItem?.name || '');
@@ -1535,15 +1502,12 @@ const CreateItemView: React.FC<{
   const [enableScheduledMenu, setEnableScheduledMenu] = useState(initialItem?.scheduledMenus?.enabled || false);
   const [scheduleType, setScheduleType] = useState(initialItem?.scheduledMenus?.type || 'Breakfast');
   const [enableComboBuilder, setEnableComboBuilder] = useState(initialItem?.comboItems && initialItem.comboItems.length > 0 ? true : false);
-  const [comboSelectedItems, setComboSelectedItems] = useState<string[]>(initialItem?.comboItems || []);
+  const [comboSelectedItems] = useState<string[]>(initialItem?.comboItems || []);
 
   const [preparationTime, setPreparationTime] = useState<string>(initialItem?.preparationTime?.toString() || '');
   const [competitorPrice, setCompetitorPrice] = useState<string>(initialItem?.competitorPrice?.toString() || '');
   const [selectedAllergens, setSelectedAllergens] = useState<string[]>(initialItem?.allergens || []);
   const [selectedDietTags, setSelectedDietTags] = useState<string[]>(initialItem?.dietTags || []);
-
-  const availableAddons = allItems.filter(item => item.category !== 'Toppings').map(item => item.name);
-  const availableToppings = allItems.filter(item => item.category === 'Toppings').map(item => item.name);
 
   const toggleAddon = (addon: string) => {
     if (selectedAddons.includes(addon)) {

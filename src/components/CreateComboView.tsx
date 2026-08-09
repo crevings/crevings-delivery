@@ -3,7 +3,6 @@ import {
   ArrowLeft, 
   Image as ImageIcon,
   Check,
-  ChevronDown,
   Info,
   Search
 } from 'lucide-react';
@@ -316,7 +315,7 @@ export const CreateComboView: React.FC<{
               </div>
               
               <div className="space-y-4">
-                {choiceGroups.map((group, index) => (
+                {choiceGroups.map((group) => (
                   <div key={group.id} className="p-4 border border-slate-200 rounded-xl bg-slate-50 relative space-y-3">
                     <button 
                       onClick={() => setChoiceGroups(choiceGroups.filter(g => g.id !== group.id))}

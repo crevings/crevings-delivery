@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { User, ArrowUpRight, Flame, Mail, ChevronDown, MessageSquare, Phone, ArrowLeft, Lock, ShieldCheck, KeyRound, Package, Sandwich, Pizza, ShoppingBag, Coffee, IceCream, Bike, Zap, Utensils, TrendingUp, CreditCard, BarChart3, Bell, Store, FileText, Shield, Tag, QrCode } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState, useRef } from 'react';
+import { User, Mail, MessageSquare, Phone, Lock, ShieldCheck, KeyRound, Package, Sandwich, Pizza, ShoppingBag, Coffee, Zap, Utensils, TrendingUp, CreditCard, BarChart3, Bell, Store, FileText, Shield, Tag, QrCode } from 'lucide-react';
+import { motion } from 'motion/react';
 import { BASE_URL } from '../api/fetcher';
 
 interface LoginViewProps {
@@ -10,39 +10,6 @@ interface LoginViewProps {
 
 type LoginStep = 'hero' | 'input' | 'otp' | 'email-method' | 'email-otp-input' | 'email-otp-verify' | 'email-password-step1' | 'email-password-step2' | 'welcome';
 
-const WelcomeScreen: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
-  const [isFadingOut, setIsFadingOut] = useState(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsFadingOut(true);
-      setTimeout(() => {
-        onLogin();
-      }, 600);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [onLogin]);
-
-  return (
-    <div
-      className={`fixed inset-0 z-[1000] bg-[#1E90FF] flex flex-col items-center justify-center transition-all duration-700 ease-in-out ${isFadingOut ? 'opacity-0 scale-105 blur-sm' : 'opacity-100 animate-in fade-in duration-700'
-        }`}
-    >
-      <div className="flex flex-col items-center gap-6 animate-in zoom-in-95 duration-1000">
-        <div className="w-24 h-24 bg-[#FFFFFF] rounded-[32px] flex items-center justify-center text-[#1E90FF] shadow-2xl shadow-blue-900/30">
-          <Flame size={48} fill="currentColor" />
-        </div>
-        <div className="text-center space-y-2">
-          <h1 className="text-5xl font-black text-white tracking-tighter uppercase">Welcome back</h1>
-          <p className="text-[11px] font-bold text-white/50 uppercase tracking-[0.4em]">Securing your connection</p>
-        </div>
-      </div>
-
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[#FFFFFF]/5 rounded-full blur-[120px] -mr-48 -mt-48"></div>
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[#FFFFFF]/5 rounded-full blur-[120px] -ml-48 -mb-48"></div>
-    </div>
-  );
-};
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onNavigateToOnboarding }) => {
   const [view, setView] = useState<LoginStep>('hero');
@@ -57,7 +24,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onNavigateToOnboa
   const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Correct OTP for demo purposes
-  const VALID_OTP = '123456';
 
   const marqueeCardsRow1 = [
     { text: "Manage your restaurant", icon: <Utensils size={16} className="text-blue-500" />, bg: "bg-blue-50 border-blue-100 text-blue-700" },
@@ -105,30 +71,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onNavigateToOnboa
     }
   };
 
-  const handleSendOtp = async () => {
-    if (view === 'input' && phoneNumber.length === 10) {
-      setView('otp');
-    } else if (view === 'email-otp-input' && email) {
-      setIsVerifying(true);
-      try {
-        const res = await fetch(`${BASE_URL}/delivery/auth/request-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          setView('email-otp-verify');
-        } else {
-          alert(data.message || 'Failed to send OTP');
-        }
-      } catch (err: any) {
-        alert(err.message || 'Network error');
-      } finally {
-        setIsVerifying(false);
-      }
-    }
-  };
 
   const verifyOtp = async () => {
     const enteredOtp = otp.join('');
@@ -317,7 +259,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onNavigateToOnboa
               {otp.map((digit, index) => (
                 <input
                   key={index}
-                  ref={(el) => (otpInputs.current[index] = el)}
+                  ref={(el) => { otpInputs.current[index] = el; }}
                   type="tel"
                   maxLength={1}
                   value={digit}
@@ -423,7 +365,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onNavigateToOnboa
               {otp.map((digit, index) => (
                 <input
                   key={index}
-                  ref={(el) => (otpInputs.current[index] = el)}
+                  ref={(el) => { otpInputs.current[index] = el; }}
                   type="tel"
                   maxLength={1}
                   value={digit}
@@ -526,4 +468,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLogin, onNavigateToOnboa
     </div>
   );
 };
+
+export default LoginView;
 

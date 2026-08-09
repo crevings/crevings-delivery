@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Headset, Store, User, Phone, Navigation, MessageCircle, 
-  Info, ShoppingBag, ChevronDown, ChevronUp, CheckCircle, Truck, Camera, X
+  Info, ShoppingBag, ChevronDown, CheckCircle, Truck, Camera, X
 } from 'lucide-react';
 import { Order } from '../types';
 import { ChatView } from './ChatView';
 
 import { BASE_URL } from '../api/fetcher';
+import { updateOrderStatus } from '../api/orders';
 
 interface OrderDetailViewProps {
   order: Order;
@@ -15,6 +16,9 @@ interface OrderDetailViewProps {
 }
 
 export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack, onUpdateOrderStatus }) => {
+  // The active-order payload is the raw Mongo doc (field `orderId`); fall back to
+  // `id` so API URLs resolve even when the caller maps the order differently.
+  const realOrderId = order.orderId || order.id;
   const [currentStatus, setCurrentStatus] = useState(order.status || 'Accepted');
   const [showItems, setShowItems] = useState(false);
   const [showProgress, setShowProgress] = useState(true);
@@ -55,10 +59,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       case 'ACCEPTED':
       case 'PREPARING': return 0;
       case 'ARRIVED':
-      case 'READY': return 1;
+      case 'READY':
+      case 'DRIVER_ARRIVED': return 1;
       case 'OUT FOR DELIVERY':
       case 'OUT_FOR_DELIVERY':
       case 'PICKED UP': return 2;
+      case 'REACHED_CUSTOMER':
       case 'ARRIVED DESTINATION': return 3;
       case 'COMPLETED':
       case 'DELIVERED': return 4;
@@ -74,10 +80,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       case 'ACCEPTED':
       case 'PREPARING': return 'Arrived at Restaurant';
       case 'ARRIVED':
-      case 'READY': return 'Order Picked Up';
+      case 'READY':
+      case 'DRIVER_ARRIVED': return 'Order Picked Up';
       case 'OUT FOR DELIVERY':
       case 'OUT_FOR_DELIVERY':
       case 'PICKED UP': return 'Arrived at Customer Location';
+      case 'REACHED_CUSTOMER':
       case 'ARRIVED DESTINATION': return 'Order Delivered';
       case 'COMPLETED':
       case 'DELIVERED': return 'Order Delivered';
@@ -88,14 +96,29 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   const handleAction = () => {
     const btnText = getButtonText();
     
-    if (btnText === 'Arrived at Restaurant' || btnText === 'Order Picked Up') {
+    if (btnText === 'Arrived at Restaurant') {
+      // Sync with backend so the consumer sees "Driver has arrived at the restaurant".
+      updateOrderStatus(realOrderId, 'DRIVER_ARRIVED').catch(err =>
+        console.error('Failed to sync driver arrival:', err)
+      );
+      setCurrentStatus('DRIVER_ARRIVED');
+      setOtpValue(['', '', '', '', '', '']);
+      setShowPickupOtpSheet(true);
+      return;
+    }
+
+    if (btnText === 'Order Picked Up') {
       setOtpValue(['', '', '', '', '', '']);
       setShowPickupOtpSheet(true);
       return;
     }
 
     if (btnText === 'Arrived at Customer Location') {
-      setCurrentStatus('ARRIVED DESTINATION');
+      // Sync with backend so the consumer sees "Driver has reached your location".
+      updateOrderStatus(realOrderId, 'REACHED_CUSTOMER').catch(err =>
+        console.error('Failed to sync reached-customer:', err)
+      );
+      setCurrentStatus('REACHED_CUSTOMER');
       if (onUpdateOrderStatus) {
         onUpdateOrderStatus(order.id);
       }
@@ -118,7 +141,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     const pin = otpValue.join('').trim();
     setIsVerifying(true);
     try {
-      const res = await fetch(`${BASE_URL}/delivery/orders/${order.id}/verify-pickup`, {
+      const res = await fetch(`${BASE_URL}/delivery/orders/${realOrderId}/verify-pickup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -165,7 +188,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     const pin = otpValue.join('').trim();
     setIsVerifying(true);
     try {
-      const res = await fetch(`${BASE_URL}/delivery/orders/${order.id}/complete`, {
+      const res = await fetch(`${BASE_URL}/delivery/orders/${realOrderId}/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -470,7 +493,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             </div>
             <button 
               onClick={handlePickupOtpVerify}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors"
+              disabled={isVerifying}
+              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
             >
               Verify OTP
             </button>
@@ -577,7 +601,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             </div>
             <button 
               onClick={handleDeliveryOtpVerify}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors"
+              disabled={isVerifying}
+              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
             >
               Verify OTP
             </button>

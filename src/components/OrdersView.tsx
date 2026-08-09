@@ -1,66 +1,30 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
-  Clock, 
-  User, 
-  Package, 
-  ChevronRight,
-  Utensils,
-  Search,
-  Mic,
-  SlidersHorizontal,
-  Check,
-  Filter,
-  ShoppingBag,
-  Globe,
-  ChevronLast,
-  Calendar,
-  Phone
+  Package,
+  Search
 } from 'lucide-react';
 import { OrderDetailView } from './OrderDetailView';
-import { BookingDetailView } from './BookingDetailView';
 import { VoiceSearchModal } from './VoiceSearchModal';
 import { OrderCard } from './OrderCard';
-import { Order, Booking } from '../types';
-
-const MOCK_BOOKINGS: Booking[] = [
-  { id: 'BKG-101', customer: 'Aryan Sharma', phone: '+91 9876543210', time: '19:30', date: '25 Oct', guests: 2, tableCount: 1, status: 'Confirmed', type: 'Table Booking', source: 'Zomato' },
-  { id: 'BKG-102', customer: 'Priya Desai', phone: '+91 9876543211', time: '20:00', date: '25 Oct', guests: 4, tableCount: 1, status: 'Pending', type: 'Table Booking with Food', source: 'Crevings' },
-  { id: 'BKG-103', customer: 'Karan Patel', phone: '+91 9876543212', time: '21:15', date: '25 Oct', guests: 8, tableCount: 2, status: 'Confirmed', type: 'Booking Package', source: 'Swiggy' },
-  { id: 'BKG-104', customer: 'Riya Gupta', phone: '+91 9876543213', time: '18:00', date: '25 Oct', guests: 2, tableCount: 1, status: 'Cancelled', type: 'Table Booking', source: 'Internal' }
-];
+import { Order } from '../types';
+import { isTerminalStatus } from '../lib/orderStatus';
 
 interface OrdersViewProps {
   orders: Order[];
   onUpdateOrderStatus: (orderId: string) => void;
-  onUpdateOrder?: (order: Order) => void;
-  onAddMoreItems?: (order: Order) => void;
   selectedOrder?: Order | null;
   setSelectedOrder?: (order: Order | null) => void;
 }
 
-export const OrdersView: React.FC<OrdersViewProps> = ({ orders, onUpdateOrderStatus, onUpdateOrder, onAddMoreItems, selectedOrder: externalSelectedOrder, setSelectedOrder: externalSetSelectedOrder }) => {
-  const [activeOrderTab, setActiveOrderTab] = useState<string>('All');
+export const OrdersView: React.FC<OrdersViewProps> = ({ orders, onUpdateOrderStatus, selectedOrder: externalSelectedOrder, setSelectedOrder: externalSetSelectedOrder }) => {
   const [internalSelectedOrder, setInternalSelectedOrder] = useState<Order | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
   const selectedOrder = externalSelectedOrder !== undefined ? externalSelectedOrder : internalSelectedOrder;
   const setSelectedOrder = externalSetSelectedOrder || setInternalSelectedOrder;
-  const [showFilters, setShowFilters] = useState(false);
   const [showVoiceSearch, setShowVoiceSearch] = useState(false);
   
-  const filterRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
-        setShowFilters(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const filteredOrders = orders.filter(o => {
                       const matchesSearch = 
       o.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -68,12 +32,12 @@ export const OrdersView: React.FC<OrdersViewProps> = ({ orders, onUpdateOrderSta
     
     if (!matchesSearch) return false;
 
-    if (o.status === 'Completed' || o.status === 'Delivered') return false;
+    if (isTerminalStatus(o.status)) return false;
     return true;
   });
 
   if (selectedOrder) {
-    return <OrderDetailView order={selectedOrder} onBack={() => setSelectedOrder(null)} onUpdateOrder={onUpdateOrder} onAddMoreItems={onAddMoreItems} onUpdateOrderStatus={onUpdateOrderStatus} />;
+    return <OrderDetailView order={selectedOrder} onBack={() => setSelectedOrder(null)} onUpdateOrderStatus={onUpdateOrderStatus} />;
   }
 
   return (

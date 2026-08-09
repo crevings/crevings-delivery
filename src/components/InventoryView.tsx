@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Search, Plus, AlertCircle, CheckCircle2, MoreVertical, Edit2, Trash2, Package, AlertTriangle, X, Download, History, FileText, Mic, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Search, Plus, AlertCircle, CheckCircle2, MoreVertical, Edit2, Trash2, Package, AlertTriangle, Download, ChevronDown } from 'lucide-react';
 
 export interface InventoryItem {
   id: string;
@@ -38,7 +38,7 @@ export const InventoryView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [categories, setCategories] = useState(['All', 'Raw Material', 'Dairy', 'Sauces', 'Meat', 'Vegetables', 'Packaging', 'Beverages']);
   const [activeCategory, setActiveCategory] = useState('All');
-  const [filter, setFilter] = useState<'All' | 'Low Stock' | 'Out of Stock'>('All');
+  const [filter] = useState<'All' | 'Low Stock' | 'Out of Stock'>('All');
   
   // Modals
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);

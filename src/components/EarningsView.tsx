@@ -2,24 +2,16 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Wallet, 
-  ArrowUpRight, 
   ArrowDownRight,
   ShoppingBag, 
-  Utensils, 
-  Bike, 
   Calendar, 
   Clock, 
   CheckCircle2, 
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Banknote,
-  Receipt,
-  Megaphone,
   RotateCcw,
-  MoreHorizontal,
-  ArrowRight,
   Filter,
   Info,
   Loader2,
@@ -29,20 +21,12 @@ import {
   AlertCircle,
   FileText,
   Gift,
-  Eye,
-  Download,
   Zap,
   PartyPopper as Confetti,
   Percent
 } from 'lucide-react';
 
-interface EarningsViewProps {
-  outletServices?: { dineIn: boolean; booking: boolean };
-}
-
-export const EarningsView: React.FC<EarningsViewProps> = ({ 
-  outletServices = { dineIn: true, booking: true } 
-}) => {
+export const EarningsView: React.FC = () => {
   const [availableFunds, setAvailableFunds] = useState(50000);
   const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [withdrawStep, setWithdrawStep] = useState<'input' | 'confirm' | 'loading' | 'success'>('input');

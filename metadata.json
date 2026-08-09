@@ -1,9 +1,0 @@
-{
-  "name": "CREVINGS DELIVERY PARTNER APP",
-  "description": "A redesigned, high-performance dashboard for restaurant partners to manage orders, status, and insights.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
-  ]
-}

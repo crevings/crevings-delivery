@@ -24,6 +24,7 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
+  orderId?: string;
   customer: string;
   type: 'Delivery' | 'Offline Orders' | 'Dine-in' | 'Table Booking' | 'Takeaway' | 'Customer Tips';
   tableNumber?: string;

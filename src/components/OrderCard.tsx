@@ -1,11 +1,11 @@
 import React from 'react';
-import { Clock, Navigation, MapPin, Package, ChevronsRight, IndianRupee } from 'lucide-react';
+import { Clock, Navigation, MapPin, Package, ChevronsRight } from 'lucide-react';
 import { Order } from '../types';
 
 interface OrderCardProps {
   order: Order;
   onClick: () => void;
-  onUpdateStatus: (e: React.MouseEvent) => void;
+  onUpdateStatus?: (e: React.MouseEvent) => void;
   isCompact?: boolean;
 }
 
@@ -100,7 +100,7 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, onClick, onUpdateSt
         <button 
           onClick={(e) => {
             if (order.status !== 'Completed' && order.status !== 'Delivered') {
-              onUpdateStatus(e);
+              onUpdateStatus?.(e);
             } else {
               e.stopPropagation();
             }

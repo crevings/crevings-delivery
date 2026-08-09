@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Search, Filter, Calendar, FileText, ChevronRight } from 'lucide-react';
-import { Order, Tab } from '../types';
+import { ArrowLeft, Search, Filter, Calendar, ChevronRight } from 'lucide-react';
+import { Order } from '../types';
 import { OrderDetailView } from './OrderDetailView';
 
 interface OrderHistoryViewProps {

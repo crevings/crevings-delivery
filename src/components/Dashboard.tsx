@@ -1,57 +1,20 @@
 
 import React, { useState } from 'react';
 import { 
-  ShoppingBag, 
-  Clock, 
-  ChevronRight, 
-  Users, 
-  Package, 
-  Wallet, 
-  CheckCircle, 
-  User,
-  TrendingUp,
-  Globe,
-  BellRing,
-  LayoutGrid,
-  Circle,
-  ArrowRight,
-  AlertCircle,
-  AlertTriangle,
-  MapPin,
-  ChevronDown,
-  Bell,
-  Plus,
-  Zap,
-  X,
-  Store,
-  Fuel,
-  Hospital,
-  Wrench,
-  List,
-  Navigation,
-  Briefcase
+  Package,
+  BellRing
 } from 'lucide-react';
 import { NewOrderAlert } from './NewOrderAlert';
 import { OrderCard } from './OrderCard';
-import { Order, Tab } from '../types';
+import { Order } from '../types';
+import { isTerminalStatus } from '../lib/orderStatus';
 
 interface DashboardProps {
   orders: Order[];
   onAddOrder: (order: Order) => void;
-  onUpdateOrderStatus: (orderId: string) => void;
   onNavigateToOrders?: () => void;
-  onNavigateToTables?: () => void;
-  onNavigateToOffers?: () => void;
-  onQuickOrder?: (type: 'Offline Orders' | 'Base Fare') => void;
-  onCreateOrder?: () => void;
   isOnline: boolean;
   setIsOnline: (val: boolean) => void;
-  rushHour: boolean;
-  setRushHour: (val: boolean) => void;
-  selectedBranch: any;
-  outletServices?: { dineIn: boolean; booking: boolean };
-  gigEndTime?: Date | null;
-  gigStartTime?: Date | null;
 }
 
 import { BASE_URL } from '../api/fetcher';
@@ -59,25 +22,15 @@ import { BASE_URL } from '../api/fetcher';
 export const Dashboard: React.FC<DashboardProps> = ({ 
   orders,
   onAddOrder,
-  onUpdateOrderStatus,
   onNavigateToOrders, 
-  onNavigateToTables,
-  onNavigateToOffers,
-  onQuickOrder,
-  onCreateOrder,
   isOnline, 
   setIsOnline,
-  rushHour,
-  setRushHour,
-  selectedBranch,
-  outletServices = { dineIn: true, booking: true },
-  gigEndTime,
-  gigStartTime
 }) => {
   const [showNewOrderAlert, setShowNewOrderAlert] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
 
-  const activeOrders = orders.filter(o => o.status !== 'Delivered' && o.status !== 'Cancelled');
+  // Orders stay visible until terminal - match both app and backend status casing.
+  const activeOrders = orders.filter(o => !isTerminalStatus(o.status));
 
   // Poll available orders from backend when online (runs immediately when app opens or reopens)
   React.useEffect(() => {
@@ -280,24 +233,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
               time: `${prepTime}:00`,
               status: 'Preparing' as const
             };
+            let assigned = false;
             try {
               // 1. Send dispatch response ACCEPT event to Inngest
-              await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/respond`, {
+              const respondRes = await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/respond`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'ACCEPT' }),
                 credentials: 'include'
               });
-              // 2. Accept order on delivery orders API
-              await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/accept`, {
+              // 2. Accept order on delivery orders API. Must send a JSON body
+              // (even an empty object): Fastify rejects an empty body when the
+              // Content-Type is application/json (FST_ERR_CTP_EMPTY_JSON_BODY).
+              const acceptRes = await fetch(`${BASE_URL}/delivery/orders/${pendingOrder.id}/accept`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
                 credentials: 'include'
               });
+              assigned = respondRes.ok && acceptRes.ok;
+              if (!assigned) {
+                console.error("Order acceptance failed - not adding locally (backend sync would drop it).");
+              }
             } catch (err) {
               console.error("Error accepting order API:", err);
             }
-            onAddOrder(acceptedOrder);
+            // Only show the order locally once the backend has actually assigned it,
+            // otherwise the 20s active-order sync removes it right away.
+            if (assigned) {
+              onAddOrder(acceptedOrder);
+            }
             setPendingOrder(null);
             setShowNewOrderAlert(false);
           }}
@@ -359,4 +324,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     </div>
   );
 };
+
+export default Dashboard;
 

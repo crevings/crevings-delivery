@@ -1,19 +1,14 @@
 import React, { useState } from 'react';
-import { 
-  ArrowLeft,
-  Settings,
+import {
   LogOut,
   ChevronRight,
   TrendingUp,
   MapPin,
-  CheckCircle,
   Bike,
-  ShieldCheck,
   Phone,
   FileText,
   BadgeAlert,
   Wallet,
-  Clock,
   Navigation,
   Star,
   Award,
