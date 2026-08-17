@@ -12,7 +12,10 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       <Header />
       <div className="flex">
         <SideNav currentTab={currentTab} />
-        <main className="flex-1 p-4 pb-24 md:ml-64">
+        {/* min-w-0 lets the main column shrink below its content's intrinsic
+            width — without it, wide pages (e.g. Earnings) overflow the
+            viewport on mobile. */}
+        <main className="flex-1 min-w-0 p-4 pb-24 md:ml-64">
           {children || <Outlet />}
         </main>
       </div>

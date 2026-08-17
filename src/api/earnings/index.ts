@@ -1,5 +1,6 @@
 import useSWR from "swr";
 import { fetcher } from "../fetcher";
+import { SWR_HOT } from "../swrConfig";
 
 export interface EarningsSummary {
   todayEarnings: number;
@@ -8,9 +9,12 @@ export interface EarningsSummary {
   onlineHours: number;
 }
 
+// NOTE: hardcoded placeholder until the backend exposes a real earnings
+// endpoint — flagged in the architectural audit (useEarningsSummary is
+// currently unwired; EarningsView is static mock UI).
 const DEFAULT_EARNINGS: EarningsSummary = {
-  todayEarnings: 1450.00,
-  weeklyEarnings: 8900.00,
+  todayEarnings: 1450.0,
+  weeklyEarnings: 8900.0,
   totalTrips: 18,
   onlineHours: 7.5,
 };
@@ -22,7 +26,7 @@ export const useEarningsSummary = () => {
     {
       fallbackData: DEFAULT_EARNINGS,
       revalidateOnMount: true,
-      revalidateOnFocus: false,
+      ...SWR_HOT,
     }
   );
 

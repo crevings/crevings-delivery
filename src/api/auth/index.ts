@@ -1,39 +1,27 @@
 import useSWR from "swr";
-import { fetcher, BASE_URL } from "../fetcher";
+import { fetcher, post } from "../fetcher";
+import { SWR_AUTH } from "../swrConfig";
 
 export const useVerifyToken = () => {
-  return useSWR("/delivery/auth/verify-token", fetcher, {
-    shouldRetryOnError: false,
-    revalidateOnFocus: false,
-  });
+  return useSWR("/delivery/auth/verify-token", fetcher, SWR_AUTH);
 };
 
-export const login = async (payload: any) => {
-  const response = await fetch(`${BASE_URL}/delivery/auth/verify-otp`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await response.json();
-  if (!response.ok || !data.success) {
+export const login = async (payload: unknown) => {
+  const data = await post<{ success?: boolean; message?: string; token?: string }>(
+    "/delivery/auth/verify-otp",
+    payload
+  );
+  if (!data.success) {
     throw new Error(data.message || "Failed to log in.");
   }
   return data;
 };
 
 export const logout = async () => {
-  const response = await fetch(`${BASE_URL}/delivery/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
-
   try {
-    return await response.json();
+    return await post("/delivery/auth/logout");
   } catch {
+    // Backend may already have dropped the session — logout is best-effort.
     return { success: true };
   }
 };

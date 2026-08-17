@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   ClipboardList,
   DollarSign,
-  UtensilsCrossed,
   Settings,
 } from 'lucide-react';
 import { Tab } from '@/types';
@@ -12,7 +11,6 @@ const navItems = [
   { tab: Tab.HOME, icon: LayoutDashboard, label: 'Home' },
   { tab: Tab.ORDERS, icon: ClipboardList, label: 'Orders' },
   { tab: Tab.EARNINGS, icon: DollarSign, label: 'Earnings' },
-  { tab: Tab.MENU, icon: UtensilsCrossed, label: 'Menu' },
   { tab: Tab.SETTINGS, icon: Settings, label: 'Settings' },
 ];
 
@@ -46,7 +44,6 @@ function getRouteForTab(tab: Tab): string {
     case Tab.HOME: return '/';
     case Tab.ORDERS: return '/orders';
     case Tab.EARNINGS: return '/earnings';
-    case Tab.MENU: return '/menu';
     case Tab.SETTINGS: return '/settings';
     default: return '/';
   }
