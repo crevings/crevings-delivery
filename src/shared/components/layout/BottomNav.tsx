@@ -1,50 +1,71 @@
-import { NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  ClipboardList,
-  DollarSign,
-  Settings,
-} from 'lucide-react';
+import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Home, Wallet, UserCircle } from 'lucide-react';
 import { Tab } from '@/types';
 
-const navItems = [
-  { tab: Tab.HOME, icon: LayoutDashboard, label: 'Home' },
-  { tab: Tab.ORDERS, icon: ClipboardList, label: 'Orders' },
-  { tab: Tab.EARNINGS, icon: DollarSign, label: 'Earnings' },
-  { tab: Tab.SETTINGS, icon: Settings, label: 'Settings' },
-];
-
-export function BottomNav({ currentTab }: { currentTab: Tab }) {
-  return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50">
-      <div className="flex items-center justify-around h-14">
-        {navItems.map(({ tab, icon: Icon, label }) => (
-          <NavLink
-            key={tab}
-            to={getRouteForTab(tab)}
-            className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 px-2 py-1 text-xs font-medium transition-colors ${
-                isActive || currentTab === tab
-                  ? 'text-blue-600'
-                  : 'text-slate-400'
-              }`
-            }
-          >
-            <Icon className="w-5 h-5" />
-            {label}
-          </NavLink>
-        ))}
-      </div>
-    </nav>
-  );
+interface BottomNavProps {
+  currentTab?: Tab;
 }
 
-function getRouteForTab(tab: Tab): string {
-  switch (tab) {
-    case Tab.HOME: return '/';
-    case Tab.ORDERS: return '/orders';
-    case Tab.EARNINGS: return '/earnings';
-    case Tab.SETTINGS: return '/settings';
-    default: return '/';
+export const BottomNav: React.FC<BottomNavProps> = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const navItems = [
+    { id: Tab.HOME, label: 'Home', path: '/', icon: Home },
+    { id: Tab.EARNINGS, label: 'Payout', path: '/earnings', icon: Wallet },
+    { id: Tab.PROFILE, label: 'Profile', path: '/profile', icon: UserCircle },
+  ];
+
+  const currentPath = location.pathname;
+  let activeIndex = navItems.findIndex(item => item.path === currentPath);
+  if (activeIndex === -1) {
+    if (currentPath.startsWith('/profile')) activeIndex = 2;
+    else if (currentPath.startsWith('/earnings') || currentPath.startsWith('/payout')) activeIndex = 1;
+    else activeIndex = 0;
   }
-}
+
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#FFFFFF] border-t border-[#E5E7EB] h-[64px] pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <div className="flex relative items-center h-full w-full max-w-md mx-auto">
+        {/* Smooth Switching Indicator */}
+        <div 
+          className="absolute top-2 bottom-2 transition-transform duration-300 ease-out pointer-events-none flex justify-center items-center"
+          style={{ 
+            width: `${100 / navItems.length}%`, 
+            transform: `translateX(${activeIndex * 100}%)` 
+          }}
+        >
+          <div className="w-[80%] h-full bg-blue-50/80 rounded-[14px]" />
+        </div>
+
+        {navItems.map((item, idx) => {
+          const isActive = activeIndex === idx;
+          const Icon = item.icon;
+
+          return (
+            <button
+              key={item.id}
+              onClick={() => navigate(item.path)}
+              className="flex flex-col items-center justify-center flex-1 h-full z-10 active:scale-95 transition-transform"
+            >
+              <div className="relative flex items-center justify-center">
+                <Icon 
+                  size={20} 
+                  strokeWidth={isActive ? 2.5 : 2} 
+                  color={isActive ? '#1E90FF' : '#9CA3AF'}
+                  className="transition-colors duration-300" 
+                />
+              </div>
+              <span 
+                className={`text-[10px] font-bold leading-none mt-[3px] transition-colors duration-300 ${isActive ? 'text-[#1E90FF]' : 'text-[#9CA3AF]'}`}
+              >
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

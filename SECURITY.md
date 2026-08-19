@@ -43,11 +43,15 @@ chmod 640 /xces/crevings-delivery/tsconfig.json
 
 | Variable | Purpose | Exposed to Client |
 |----------|---------|-------------------|
-| `VITE_API_BASE_URL` | Backend API origin | Yes |
+| `VITE_PUBLIC_BASE_API_URL` | Backend API origin (read by `src/api/fetcher.ts`) | Yes |
+| `VITE_API_BASE_URL` | Backend API origin (used by `src/config/env.ts` schema) | Yes |
 | `VITE_GOOGLE_MAPS_PLATFORM_KEY` | Google Maps | Yes |
+| `VITE_GEMINI_API_KEY` | Optional AI features | Yes |
 | `VITE_APP_ENV` | Environment selector | Yes |
 | `VITE_ENABLE_MOCK_DATA` | Feature flag | Yes |
 | `VITE_SSE_ENABLED` | Feature flag | Yes |
+| `VITE_LOCATION_TRACKING_INTERVAL` | Location ping interval (ms) | Yes |
+| `VITE_ORDER_POLL_INTERVAL` | Order poll interval (ms) | Yes |
 
 ### Prohibited Patterns
 
@@ -69,21 +73,19 @@ chmod 640 /xces/crevings-delivery/tsconfig.json
 
 ### In Transit
 
-- **TLS 1.3** enforced for all API calls
-- **HTTPS-only** in production
-- **Certificate pinning** for Capacitor mobile builds
-- **SSE connections** use `wss://` in production
+- **HTTPS-only** in production (enforced by the deploy target / backend)
+- **SSE connections** use `withCredentials` over the same origin as the API
 
-### Frontend-Specific Protections
+## Frontend-Specific Protections
 
 | Protection | Implementation |
 |------------|----------------|
-| XSS | React JSX escaping + `sanitizeHtml()` for dynamic content |
-| CSRF | `csrf.ts` token generation + cookie validation |
-| Input Validation | Zod schemas in `validateInput.ts` |
-| Rate Limiting | Client-side throttle in `rateLimiter.ts` |
-| Audit Logging | `auditLog.ts` with security event tracking |
-| Secure Storage | `sessionStorage` wrapper in `secureStorage.ts` |
+| XSS | React JSX escaping (no `dangerouslySetInnerHTML` with user input) |
+| CSRF | Backend-side defense (SameSite cookies + Origin checks) — client sends `credentials: "include"` on every request |
+| Input Validation | Zod schemas in `src/config/env.ts`; typed API payloads |
+| Audit Logging | `src/utils/security/auditLog.ts` with security event tracking |
+| Secure Storage | `sessionStorage` wrapper in `src/utils/security/secureStorage.ts` (session-scoped; not encrypted — do not store long-lived secrets) |
+| Session Expiry | Global 401 hook: any authenticated request returning 401 clears the session and redirects to `/login` (`src/api/fetcher.ts`, `src/app/providers/AuthProvider.tsx`) |
 
 ## Access Control Lists
 
@@ -115,11 +117,11 @@ chmod 640 /xces/crevings-delivery/tsconfig.json
 3. **Test** — Unit + integration tests
 4. **Build** — Production build with sourcemaps hidden
 5. **Audit** — `npm audit --audit-level=high`
-6. **Secret scan** — TruffleHog / gitleaks in pre-commit
+6. **Secret scan** — TruffleHog / gitleaks in pre-commit (recommended; not yet configured in this repo)
 
 ## Incident Response
 
 - **Security events** logged to `auditLog.ts`
 - **Critical events** sent to backend logging service
-- **Token compromise** → immediate logout + session invalidation
+- **Token compromise** → immediate logout + session invalidation (global 401 hook)
 - **XSS attempt** → sanitize + block + alert

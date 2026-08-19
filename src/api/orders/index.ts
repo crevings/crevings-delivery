@@ -43,6 +43,8 @@ const DRIVER_STATUS_LABELS: Record<string, string> = {
   DRIVER_ARRIVED: "Out for Delivery",
   "OUT FOR DELIVERY": "Out for Delivery",
   REACHED_CUSTOMER: "Out for Delivery",
+  COMPLETED: "Delivered",
+  DELIVERED: "Delivered",
 };
 
 export const mapDriverStatus = (status?: string): string => {
@@ -72,7 +74,14 @@ export const mapActiveOrder = (raw: any): Order => ({
   status: mapDriverStatus(raw.status),
   time: raw.dispatchTime
     ? new Date(raw.dispatchTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : "--",
+    : raw.createdAt
+      ? new Date(raw.createdAt).toLocaleString([], {
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "--",
   paymentStatus: raw.payment?.status === "Paid" ? "Paid" : "Unpaid",
   paymentMethod: raw.payment?.method || "",
   address: raw.customerDetails?.address || "",
@@ -90,26 +99,26 @@ export const mapActiveOrder = (raw: any): Order => ({
   discount: raw.discount || 0,
 });
 
-// NOTE: the backend has no /delivery/orders/history endpoint yet — the
-// endpoint string is the contract the UI expects; wiring it is a follow-up
-// (flagged in the architectural audit).
-export const useOrderHistory = () => {
-  const { data, error, isLoading, mutate } = useSWR<{ success?: boolean; orders?: Order[] }>(
-    "/delivery/orders/history",
-    fetcher,
-    {
-      revalidateOnMount: true,
-      ...SWR_HOT,
-    }
-  );
+/**
+ * Driver order history — `GET /delivery/orders/history?limit=&cursor=`
+ * (implemented in the backend; cursor-paginated, newest first). The backend
+ * returns raw order docs; callers map them with mapActiveOrder.
+ */
+export const useOrderHistory = (limit: number = 20, cursor?: string) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
 
-  const orders = useMemo(
-    () => (Array.isArray(data) ? data : (data?.orders || [])),
-    [data]
-  );
+  const { data, error, isLoading, mutate } = useSWR<
+    { success?: boolean; orders?: any[]; nextCursor?: string | null; hasMore?: boolean }
+  >(`/delivery/orders/history?${params.toString()}`, fetcher, {
+    revalidateOnMount: true,
+    ...SWR_HOT,
+  });
 
   return {
-    orderHistory: orders,
+    orderHistory: (data?.orders || []).map(mapActiveOrder),
+    nextCursor: data?.nextCursor || null,
+    hasMore: data?.hasMore || false,
     isLoading,
     isError: error,
     mutate,

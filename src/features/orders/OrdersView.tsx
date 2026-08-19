@@ -8,7 +8,7 @@ import { OrderDetailView } from './OrderDetailView';
 import { VoiceSearchModal } from '@/shared/components/VoiceSearchModal';
 import { OrderCard } from '@/features/dashboard/components/OrderCard';
 import { isTerminalStatus } from '@/lib/orderStatus';
-import { updateOrderStatus } from '@/api/orders';
+import { updateOrderStatus, mapDriverStatus } from '@/api/orders';
 import { useOrdersStore } from '@/app/store';
 
 // OrdersView is mounted directly by the router, so it sources its state from
@@ -22,18 +22,37 @@ export const OrdersView: React.FC = () => {
   
   const [showVoiceSearch, setShowVoiceSearch] = useState(false);
 
-  // Advance an order to its next status locally and sync the change to the
-  // backend (mirrors the pre-refactor App.tsx status chain).
-  const onUpdateOrderStatus = (orderId: string) => {
+  /**
+   * Advance an order's status locally and sync it to the backend.
+   *
+   * The backend only accepts driver-settable statuses via PATCH /status
+   * (DRIVER_ARRIVED, REACHED_CUSTOMER — see backend
+   * orderStatus.constants.ts); OTP-verified transitions (OUT FOR DELIVERY,
+   * COMPLETED) go through the dedicated verify-pickup / complete endpoints.
+   * When an explicit `status` is passed (OrderDetailView after a successful
+   * OTP verify / status PATCH), the store is updated only — the backend is
+   * already in sync.
+   */
+  const onUpdateOrderStatus = (orderId: string, status?: string) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
-    let nextStatus = order.status;
-    if (order.status === 'Incoming' || order.status === 'Accepted') nextStatus = 'Preparing';
-    else if (order.status === 'Preparing' || order.status === 'Cooking') nextStatus = 'Ready';
-    else if (order.status === 'Ready') nextStatus = 'Completed';
+    if (status) {
+      updateOrder(orderId, { status: mapDriverStatus(status) });
+      return;
+    }
 
-    updateOrder(orderId, { status: nextStatus });
+    const s = (order.status || '').toUpperCase();
+    let nextStatus: string | null = null;
+    if (s === 'ACCEPTED' || s === 'PREPARING' || s === 'READY' ||
+        s === 'READY_FOR_PICKUP' || s === 'DRIVER_ASSIGNED') {
+      nextStatus = 'DRIVER_ARRIVED';
+    } else if (s === 'DRIVER_ARRIVED' || s === 'OUT FOR DELIVERY' || s === 'OUT_FOR_DELIVERY') {
+      nextStatus = 'REACHED_CUSTOMER';
+    }
+    if (!nextStatus) return;
+
+    updateOrder(orderId, { status: mapDriverStatus(nextStatus) });
     updateOrderStatus(orderId, nextStatus).catch(err =>
       console.error('Failed to sync order status:', err)
     );

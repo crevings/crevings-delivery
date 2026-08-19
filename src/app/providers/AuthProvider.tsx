@@ -1,41 +1,115 @@
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, useEffect, ReactNode } from 'react';
+import { useVerifyToken, logout as apiLogout } from '@/api/auth';
+import { UNAUTHORIZED_EVENT } from '@/api/fetcher';
+import { useAuthStore } from '@/app/store';
+import { clearSecureStorage, setSecureToken } from '@/utils/security/secureStorage';
 
 interface AuthContextValue {
   isAuthenticated: boolean;
+  isLoadingAuth: boolean;
   partnerId: string | null;
   partnerRole: string | null;
-  login: (token: string, partnerData: any) => void;
-  logout: () => void;
+  partnerEmail: string | null;
+  login: (token?: string, partnerData?: any) => void;
+  logout: () => Promise<void>;
+  mutate: () => Promise<any>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const isAuthenticated = typeof window !== 'undefined' ? !!sessionStorage.getItem('delivery_auth_token') : false;
+  const { data, error, mutate } = useVerifyToken();
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isLoadingAuth = useAuthStore((s) => s.isLoadingAuth);
+  const partnerId = useAuthStore((s) => s.partnerId);
+  const partnerRole = useAuthStore((s) => s.partnerRole);
+  const partnerEmail = useAuthStore((s) => s.partnerEmail);
 
-  const login = (token: string, partnerData: any) => {
-    sessionStorage.setItem('delivery_auth_token', token);
-    sessionStorage.setItem('delivery_partner_data', JSON.stringify(partnerData));
+  useEffect(() => {
+    if (data?.success && data.user) {
+      useAuthStore.setState({
+        isLoggedIn: true,
+        isLoadingAuth: false,
+        partnerId: data.user.referenceId || null,
+        partnerRole: data.user.role || 'DELIVERY_PARTNER',
+        partnerEmail: data.user.email || null,
+      });
+      try {
+        sessionStorage.setItem('delivery_partner_data', JSON.stringify(data.user));
+      } catch {
+        // non-fatal
+      }
+    } else if (error || (data && !data.success)) {
+      useAuthStore.setState({
+        isLoggedIn: false,
+        isLoadingAuth: false,
+        partnerId: null,
+        partnerRole: null,
+        partnerEmail: null,
+      });
+      clearSecureStorage();
+    }
+  }, [data, error]);
+
+  // Global 401 hook: any authenticated request that returns 401 (expired
+  // session, revoked token, backend restart) drops the local session so
+  // ProtectedRoute redirects to /login instead of leaving the driver stuck
+  // on error screens. Guard against firing during the boot-time verify.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      if (!useAuthStore.getState().isLoggedIn) return;
+      clearSecureStorage();
+      useAuthStore.getState().logout();
+      mutate(undefined, false);
+    };
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, [mutate]);
+
+  const login = (token?: string, partnerData?: any) => {
+    if (token) {
+      setSecureToken(token);
+    }
+    useAuthStore.setState({
+      isLoggedIn: true,
+      isLoadingAuth: false,
+      partnerId: partnerData?.referenceId || partnerData?.id || null,
+      partnerRole: partnerData?.role || 'DELIVERY_PARTNER',
+      partnerEmail: partnerData?.email || null,
+    });
+    if (partnerData) {
+      try {
+        sessionStorage.setItem('delivery_partner_data', JSON.stringify(partnerData));
+      } catch {
+        // non-fatal
+      }
+    }
+    mutate();
   };
 
-  const logout = () => {
-    sessionStorage.removeItem('delivery_auth_token');
-    sessionStorage.removeItem('delivery_partner_data');
-    sessionStorage.removeItem('delivery_refresh_token');
+  const logout = async () => {
+    try {
+      await apiLogout().catch(() => {});
+    } finally {
+      clearSecureStorage();
+      useAuthStore.getState().logout();
+      mutate(undefined, false);
+    }
   };
-
-  const partnerData = typeof window !== 'undefined'
-    ? JSON.parse(sessionStorage.getItem('delivery_partner_data') || '{}')
-    : {};
 
   return (
-    <AuthContext.Provider value={{
-      isAuthenticated,
-      partnerId: partnerData.id || null,
-      partnerRole: partnerData.role || null,
-      login,
-      logout,
-    }}>
+    <AuthContext.Provider
+      value={{
+        isAuthenticated: isLoggedIn,
+        isLoadingAuth,
+        partnerId,
+        partnerRole,
+        partnerEmail,
+        login,
+        logout,
+        mutate,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

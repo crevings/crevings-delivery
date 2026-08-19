@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '@/app/store';
+import { usePartnerProfile } from '@/api/profile';
 
 const Toggle = ({ checked, onChange }: { checked: boolean, onChange: () => void }) => (
   <button
@@ -313,6 +315,13 @@ const ChangeAccountFlow = ({ type, currentVal, onCancel }: { type: 'Email' | 'Ph
 export const SettingsView: React.FC = () => {
   const navigate = useNavigate();
   const onBack = () => navigate(-1);
+  const partnerEmail = useAuthStore(s => s.partnerEmail);
+  const { profile } = usePartnerProfile();
+
+  const registeredEmail = profile?.email || partnerEmail || '—';
+  const registeredPhone = profile?.phone || '—';
+  const registeredPhoneDigits = profile?.phone?.replace(/\D/g, '') || '';
+
   const [showPasswordFlow, setShowPasswordFlow] = useState(false);
   const [activeAccountFlow, setActiveAccountFlow] = useState<'Email' | 'Phone Number' | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState<'location' | 'media' | 'mic' | null>(null);
@@ -632,7 +641,7 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div>
                 <p className="text-xs text-slate-500 mb-0.5">Registered Email</p>
-                <p className="text-sm font-medium text-slate-900">rider@email.com</p>
+                <p className="text-sm font-medium text-slate-900">{registeredEmail}</p>
               </div>
               <button 
                 onClick={() => setActiveAccountFlow(activeAccountFlow === 'Email' ? null : 'Email')}
@@ -642,13 +651,13 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
             {activeAccountFlow === 'Email' && (
-              <ChangeAccountFlow type="Email" currentVal="rider@email.com" onCancel={() => setActiveAccountFlow(null)} />
+              <ChangeAccountFlow type="Email" currentVal={registeredEmail} onCancel={() => setActiveAccountFlow(null)} />
             )}
 
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-slate-500 mb-0.5">Registered Phone Number</p>
-                <p className="text-sm font-medium text-slate-900">+91 98765 43210</p>
+                <p className="text-sm font-medium text-slate-900">{registeredPhone}</p>
               </div>
               <button 
                 onClick={() => setActiveAccountFlow(activeAccountFlow === 'Phone Number' ? null : 'Phone Number')}
@@ -658,7 +667,7 @@ export const SettingsView: React.FC = () => {
               </button>
             </div>
             {activeAccountFlow === 'Phone Number' && (
-              <ChangeAccountFlow type="Phone Number" currentVal="9876543210" onCancel={() => setActiveAccountFlow(null)} />
+              <ChangeAccountFlow type="Phone Number" currentVal={registeredPhoneDigits} onCancel={() => setActiveAccountFlow(null)} />
             )}
           </div>
         </div>

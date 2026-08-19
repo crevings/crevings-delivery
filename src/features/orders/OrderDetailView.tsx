@@ -3,6 +3,7 @@ import {
   ArrowLeft, Headset, Store, User, Phone, Navigation, MessageCircle, 
   Info, ShoppingBag, ChevronDown, CheckCircle, Truck, Camera, X
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Order } from '@/types';
 import { ChatView } from './ChatView';
 
@@ -11,14 +12,27 @@ import { updateOrderStatus } from '@/api/orders';
 
 interface OrderDetailViewProps {
   order: Order;
-  onBack: () => void;
-  onUpdateOrderStatus?: (orderId: string) => void;
+  onBack?: () => void;
+  /**
+   * Called after a status transition. `status` is the backend status that
+   * was set (DRIVER_ARRIVED / OUT FOR DELIVERY / REACHED_CUSTOMER /
+   * COMPLETED) — the parent syncs its store with it. When omitted, the
+   * parent derives the next settable status itself.
+   */
+  onUpdateOrderStatus?: (orderId: string, status?: string) => void;
 }
 
 const formatINR = (value: number) =>
   `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack, onUpdateOrderStatus }) => {
+  const navigate = useNavigate();
+  const handleBack = () => {
+    if (onBack) onBack();
+    else if (window.history.length > 1) navigate(-1);
+    else navigate('/');
+  };
+
   // The active-order payload is the raw Mongo doc (field `orderId`); fall back to
   // `id` so API URLs resolve even when the caller maps the order differently.
   const realOrderId = order.orderId || order.id;
@@ -121,6 +135,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
         console.error('Failed to sync driver arrival:', err)
       );
       setCurrentStatus('DRIVER_ARRIVED');
+      onUpdateOrderStatus?.(order.id, 'DRIVER_ARRIVED');
       setOtpValue(['', '', '', '', '', '']);
       setShowPickupOtpSheet(true);
       return;
@@ -138,9 +153,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
         console.error('Failed to sync reached-customer:', err)
       );
       setCurrentStatus('REACHED_CUSTOMER');
-      if (onUpdateOrderStatus) {
-        onUpdateOrderStatus(order.id);
-      }
+      onUpdateOrderStatus?.(order.id, 'REACHED_CUSTOMER');
       return;
     }
     
@@ -153,7 +166,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     if (onUpdateOrderStatus) {
       onUpdateOrderStatus(order.id);
     }
-    onBack();
+    handleBack();
   };
 
   const handlePickupOtpVerify = async () => {
@@ -173,17 +186,17 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
         return;
       }
       setCurrentStatus('OUT FOR DELIVERY');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Pickup OTP verification error:", err);
-      setCurrentStatus('OUT FOR DELIVERY');
+      alert("Network error verifying Pickup PIN: " + (err.message || 'Please check your connection'));
+      setIsVerifying(false);
+      return;
     } finally {
       setIsVerifying(false);
     }
 
     setShowPickupOtpSheet(false);
-    if (onUpdateOrderStatus) {
-      onUpdateOrderStatus(order.id);
-    }
+    onUpdateOrderStatus?.(order.id, 'OUT FOR DELIVERY');
   };
 
   const handleDeliveryConfirm = () => {
@@ -220,26 +233,24 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
         return;
       }
       setCurrentStatus('COMPLETED');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Delivery OTP verification error:", err);
-      setCurrentStatus('COMPLETED');
+      alert("Network error verifying Delivery PIN: " + (err.message || 'Please check your connection'));
+      setIsVerifying(false);
+      return;
     } finally {
       setIsVerifying(false);
     }
 
     setShowDeliveryOtpSheet(false);
-    if (onUpdateOrderStatus) {
-      onUpdateOrderStatus(order.id);
-    }
-    onBack();
+    onUpdateOrderStatus?.(order.id, 'COMPLETED');
+    handleBack();
   };
 
   const handlePhotoCapture = () => {
     setShowPhotoSheet(false);
-    if (onUpdateOrderStatus) {
-      onUpdateOrderStatus(order.id);
-    }
-    onBack();
+    onUpdateOrderStatus?.(order.id, 'COMPLETED');
+    handleBack();
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,7 +271,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4 bg-[#FFFFFF] sticky top-0 z-10 shrink-0">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-1 -ml-1 text-slate-700 active:bg-slate-50 rounded-full">
+          <button onClick={handleBack} className="p-1 -ml-1 text-slate-700 active:bg-slate-50 rounded-full">
             <ArrowLeft size={24} />
           </button>
           <h1 className="text-[20px] font-bold text-slate-800 tracking-tight">Order #{order.id}</h1>

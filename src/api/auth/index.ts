@@ -2,8 +2,19 @@ import useSWR from "swr";
 import { fetcher, post } from "../fetcher";
 import { SWR_AUTH } from "../swrConfig";
 
+export interface VerifyTokenResponse {
+  success: boolean;
+  message?: string;
+  user?: {
+    email?: string;
+    role?: string;
+    referenceId?: string;
+  };
+  profile?: unknown;
+}
+
 export const useVerifyToken = () => {
-  return useSWR("/delivery/auth/verify-token", fetcher, SWR_AUTH);
+  return useSWR<VerifyTokenResponse>("/delivery/auth/verify-token", fetcher, SWR_AUTH);
 };
 
 export const login = async (payload: unknown) => {

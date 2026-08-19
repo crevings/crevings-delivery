@@ -48,6 +48,24 @@ const getSessionToken = (): string | null => {
   }
 };
 
+/**
+ * Fired once when any authenticated request comes back 401, so the app can
+ * drop the session and redirect to /login (AuthProvider listens for it).
+ * Auth is dual-mode (cookie and/or Bearer token), so a 401 can also arrive
+ * with a valid-looking local token — treat it as a global session expiry.
+ */
+export const UNAUTHORIZED_EVENT = "delivery:unauthorized";
+
+const notifyUnauthorized = () => {
+  try {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+    }
+  } catch {
+    // non-fatal
+  }
+};
+
 export async function request<T = unknown>(
   path: string,
   options: RequestOptions = {}
@@ -80,6 +98,12 @@ export async function request<T = unknown>(
     });
 
     if (!res.ok) {
+      // Global session-expiry hook: only fire when the request was
+      // authenticated (token or cookie present) to avoid spurious logouts
+      // from anonymous endpoints (e.g. /zones/check).
+      if (res.status === 401 && isRelative && getSessionToken() !== null) {
+        notifyUnauthorized();
+      }
       let info: unknown = null;
       try {
         info = await res.json();

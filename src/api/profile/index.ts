@@ -1,40 +1,66 @@
 import useSWR from "swr";
-import { fetcher, post } from "../fetcher";
+import { fetcher, post, patch } from "../fetcher";
 import { SWR_HOT } from "../swrConfig";
-import type { DeliveryProfile } from "@/types";
 
-export type { DeliveryProfile } from "@/types";
+/** Partner profile doc as returned by `GET /delivery/profile` (raw partner doc). */
+export interface DeliveryPartnerProfile {
+  partnerId?: string;
+  name?: string;
+  phone?: string;
+  phoneVerified?: boolean;
+  email?: string;
+  dateOfBirth?: string | Date;
+  emergencyContact?: {
+    name?: string;
+    phone?: string;
+    relationship?: string;
+  };
+  vehicleType?: string;
+  vehicleNumber?: string;
+  licenseNumber?: string;
+  status?: string;
+  isOnline?: boolean;
+}
 
-// NOTE: hardcoded placeholder until the profile screen is wired to the real
-// `/delivery/profile` payload — flagged in the architectural audit (the hook
-// is currently unwired; ProfileView is static mock UI).
-const DEFAULT_PROFILE: DeliveryProfile = {
-  id: "DEL-8841",
-  name: "Vikram Singh",
-  phone: "+91 98765 43210",
-  email: "vikram@crevings.com",
-  vehicleType: "Electric Scooter",
-  vehicleNumber: "MH 12 AB 1234",
-  status: "Active",
-};
+/** Fields a delivery partner can update via PATCH /delivery/profile. */
+export interface UpdateProfileData {
+  name?: string;
+  phone?: string;
+  phoneVerified?: boolean;
+  dateOfBirth?: string;
+  emergencyContact?: {
+    name?: string;
+    phone?: string;
+    relationship?: string;
+  };
+  vehicleType?: string;
+  vehicleNumber?: string;
+  licenseNumber?: string;
+}
 
 export const usePartnerProfile = () => {
-  const { data, error, isLoading, mutate } = useSWR<DeliveryProfile>(
-    "/delivery/profile",
-    fetcher,
-    {
-      fallbackData: DEFAULT_PROFILE,
-      revalidateOnMount: true,
-      ...SWR_HOT,
-    }
-  );
+  const { data, error, isLoading, mutate } = useSWR<{
+    success?: boolean;
+    profile?: DeliveryPartnerProfile;
+  }>("/delivery/profile", fetcher, {
+    revalidateOnMount: true,
+    ...SWR_HOT,
+  });
 
   return {
-    profile: data || DEFAULT_PROFILE,
+    profile: data?.profile,
     isLoading,
     isError: error,
     mutate,
   };
+};
+
+export const updatePartnerProfile = async (updateData: UpdateProfileData) => {
+  const data = await patch<{ success?: boolean; profile?: DeliveryPartnerProfile; message?: string }>("/delivery/profile", updateData);
+  if (!data.success) {
+    throw new Error(data.message || "Failed to update profile");
+  }
+  return data;
 };
 
 export const updatePartnerStatus = async (status: "Active" | "Offline" | "Busy") => {

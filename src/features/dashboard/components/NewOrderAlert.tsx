@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Order } from '@/types';
-import { Navigation, Map, ChevronLeft } from 'lucide-react';
+import { Navigation, MapPin, ChevronLeft } from 'lucide-react';
 import { playOrderAlertSound } from '@/utils/audioNotifier';
 
 interface NewOrderAlertProps {
@@ -32,7 +32,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
   if (!isOpen) return null;
 
   const handleConfirmAccept = () => {
-    onAccept(10); // arbitrary time
+    onAccept(10);
     onClose();
   };
 
@@ -53,13 +53,15 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
     'Other reason'
   ];
 
+  const estimatedEarning = order.driverEarnings || order.deliveryFee || (order.total ? (parseFloat(order.total) * 0.15).toFixed(0) : '0');
+
   return (
     <div 
       className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 sm:items-center transition-opacity"
       onClick={onClose}
     >
       <div 
-        className="w-full bg-[#FFFFFF] rounded-t-3xl sm:rounded-3xl sm:max-w-md overflow-hidden flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:fade-in duration-300 relative"
+        className="w-full bg-[#FFFFFF] rounded-t-3xl sm:rounded-3xl sm:max-w-md overflow-hidden flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:fade-in duration-300 relative shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
         
@@ -67,8 +69,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
           <>
             {/* Header content */}
             <div className="bg-emerald-50 p-6 flex flex-col items-center relative overflow-hidden">
-               {/* Background pulse effect */}
-               <div className={`absolute inset-0 bg-emerald-500/10 animate-pulse`}></div>
+               <div className="absolute inset-0 bg-emerald-500/10 animate-pulse"></div>
                
                <div className="relative z-10 w-20 h-20 rounded-full border-4 border-emerald-100 flex items-center justify-center mb-3 bg-white shadow-sm">
                  <div className="text-emerald-500 animate-bounce mt-2">
@@ -80,6 +81,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                </div>
                
                <h2 className="relative z-10 text-xl font-black text-slate-900 tracking-tight uppercase">New Delivery Request</h2>
+               <p className="relative z-10 text-xs font-semibold text-slate-500 uppercase tracking-widest mt-1">Order #{order.id}</p>
             </div>
 
             <div className="p-6 space-y-6">
@@ -87,11 +89,12 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex items-center justify-between">
                 <div>
                    <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1 mt-0.5">Estimated Earning</p>
-                   <p className="text-3xl font-black text-slate-900 tracking-tight leading-none">₹{order.total ? (parseFloat(order.total) * 0.15).toFixed(0) : '45'}</p>
+                   <p className="text-3xl font-black text-slate-900 tracking-tight leading-none">₹{estimatedEarning}</p>
                 </div>
                 <div className="text-right">
-                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1 mt-0.5">Extra Earning</p>
-                   <p className="text-xl font-bold text-emerald-600 leading-none">+ ₹15</p>
+                   <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide">
+                     {order.paymentStatus === 'Paid' ? 'Online Paid' : 'Cash on Delivery'}
+                   </span>
                 </div>
               </div>
 
@@ -103,10 +106,12 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                     <div className="w-5 h-5 bg-blue-50 border-4 border-white rounded-full shadow-sm z-10 flex flex-col mt-0.5 shrink-0">
                       <div className="w-full h-full rounded-full bg-blue-500 border border-blue-600 shadow-sm"></div>
                     </div>
-                    <div className="pb-6">
+                    <div className="pb-6 flex-1 min-w-0">
                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1.5">Pickup Location</p>
-                       <p className="text-[15px] font-bold text-slate-900 leading-tight">{order.restaurantName || 'Restaurant'}</p>
-                       <p className="text-[13px] font-medium text-blue-600 mt-1 flex items-center gap-1"><Navigation size={12}/> {order.pickupDistanceKm ? `${order.pickupDistanceKm} km away` : 'Restaurant pickup'}</p>
+                       <p className="text-[15px] font-bold text-slate-900 leading-tight truncate">{order.restaurantName || 'Restaurant'}</p>
+                       <p className="text-[13px] font-medium text-blue-600 mt-1 flex items-center gap-1">
+                         <Navigation size={12}/> {order.pickupDistanceKm ? `${order.pickupDistanceKm} km away` : (order.restaurantAddress || 'Restaurant pickup')}
+                       </p>
                     </div>
                  </div>
 
@@ -115,14 +120,15 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                     <div className="w-5 h-5 bg-rose-50 border-4 border-white rounded-full shadow-sm z-10 flex flex-col mt-0.5 shrink-0">
                        <div className="w-full h-full rounded-full bg-rose-500 border border-rose-600 shadow-sm"></div>
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1.5">Drop Customer</p>
-                       <p className="text-[15px] font-bold text-slate-900 leading-tight">{order.address || 'Civil Lines, Prayagraj'}</p>
-                       <p className="text-[13px] font-medium text-slate-500 mt-1 flex items-center gap-1"><Map size={12}/> 4.1 km delivery</p>
+                       <p className="text-[15px] font-bold text-slate-900 leading-tight truncate">{order.customer || 'Customer'}</p>
+                       <p className="text-[13px] font-medium text-slate-500 mt-1 flex items-center gap-1">
+                         <MapPin size={12}/> {order.address || 'Delivery Address'}
+                       </p>
                     </div>
                  </div>
               </div>
-
             </div>
 
             {/* Action Buttons */}

@@ -1,20 +1,21 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { User, Mail, MessageSquare, Phone, Lock, ShieldCheck, KeyRound, Package, Sandwich, Pizza, ShoppingBag, Coffee, Zap, Utensils, TrendingUp, CreditCard, BarChart3, Bell, Store, FileText, Shield, Tag, QrCode } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { BASE_URL } from '@/api/fetcher';
 import { useAuthStore } from '@/app/store';
-import { setSecureToken } from '@/utils/security/secureStorage';
+import { useAuth } from '@/app/providers';
+import { LoadingSpinner } from '@/shared/components/layout';
 
 type LoginStep = 'hero' | 'input' | 'otp' | 'email-method' | 'email-otp-input' | 'email-otp-verify' | 'email-password-step1' | 'email-password-step2' | 'welcome';
 
 
 export const LoginView: React.FC = () => {
   const navigate = useNavigate();
-  const setIsLoggedIn = useAuthStore(s => s.setIsLoggedIn);
-  const setPartnerId = useAuthStore(s => s.setPartnerId);
-  const setPartnerRole = useAuthStore(s => s.setPartnerRole);
+  const isLoggedIn = useAuthStore(s => s.isLoggedIn);
+  const isLoadingAuth = useAuthStore(s => s.isLoadingAuth);
   const setIsOnboarding = useAuthStore(s => s.setIsOnboarding);
+  const { login: authLogin } = useAuth();
   const [view, setView] = useState<LoginStep>('hero');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
@@ -25,8 +26,6 @@ export const LoginView: React.FC = () => {
   const [isVerifying, setIsVerifying] = useState(false);
 
   const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Correct OTP for demo purposes
 
   const marqueeCardsRow1 = [
     { text: "Manage your restaurant", icon: <Utensils size={16} className="text-blue-500" />, bg: "bg-blue-50 border-blue-100 text-blue-700" },
@@ -55,27 +54,17 @@ export const LoginView: React.FC = () => {
     { text: "QR Ordering", icon: <QrCode size={16} className="text-blue-500" />, bg: "bg-blue-50 border-blue-100 text-blue-700" },
   ];
 
-  // Complete a successful login: persist the session token, mark the store
-  // authenticated, then land on the dashboard. (LoginView is mounted directly
-  // by the router, so it owns the auth wiring itself.)
+  // If user is already authenticated (via cookie/session), redirect to dashboard
+  useEffect(() => {
+    if (!isLoadingAuth && isLoggedIn) {
+      navigate('/', { replace: true });
+    }
+  }, [isLoggedIn, isLoadingAuth, navigate]);
+
+  // Complete a successful login: persist session data, mark the store
+  // authenticated, and navigate to dashboard.
   const completeLogin = (data: { token?: string; user?: { email?: string; role?: string; referenceId?: string } }) => {
-    if (data.token) {
-      setSecureToken(data.token);
-    }
-    setIsLoggedIn(true);
-    if (data.user) {
-      setPartnerRole(data.user.role ?? 'DELIVERY_PARTNER');
-      if (data.user.referenceId) {
-        setPartnerId(data.user.referenceId);
-      }
-      // Persist identity so a page refresh can restore the session (read back
-      // in main.tsx when the app boots).
-      try {
-        sessionStorage.setItem('delivery_partner_data', JSON.stringify(data.user));
-      } catch {
-        // non-fatal — session still works via the token
-      }
-    }
+    authLogin(data.token, data.user);
     navigate('/', { replace: true });
   };
 
@@ -208,6 +197,10 @@ export const LoginView: React.FC = () => {
     );
   };
 
+  if (isLoadingAuth) {
+    return <LoadingSpinner />;
+  }
+
   return (
     <div className="fixed inset-0 z-[500] bg-[#FFFFFF] flex flex-col font-sans overflow-hidden">
       <div className="flex-1 flex flex-col items-center justify-center px-8 text-center animate-in fade-in duration-700 pt-12">
@@ -300,7 +293,7 @@ export const LoginView: React.FC = () => {
               ))}
             </div>
 
-            {otpError && <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">Invalid code. Please try again. (Use 123456)</p>}
+            {otpError && <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">Invalid code. Please try again.</p>}
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setView('input')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
@@ -406,7 +399,7 @@ export const LoginView: React.FC = () => {
               ))}
             </div>
 
-            {otpError && <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">Invalid code. Please try again. (Use 123456)</p>}
+            {otpError && <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">Invalid code. Please try again.</p>}
 
             <div className="flex gap-3 pt-2">
               <button onClick={() => setView('email-otp-input')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
