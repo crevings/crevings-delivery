@@ -53,12 +53,9 @@ export const EmergencyHelpButton: React.FC = () => {
       <div className="fixed bottom-20 right-4 z-40 lg:bottom-8 lg:right-8">
         <button
           onClick={() => setIsOpen(true)}
-          className="group relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-tr from-red-600 to-rose-500 text-white shadow-xl shadow-red-500/30 hover:scale-105 active:scale-95 transition-all duration-200 focus:outline-none"
+          className="group relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-tr from-red-600 to-rose-500 text-white shadow-lg shadow-red-500/25 active:scale-95 transition-transform duration-200 focus:outline-none"
           aria-label="Emergency Help & Support"
         >
-          {/* Animated pulse ring */}
-          <span className="absolute -inset-1 rounded-full bg-red-500/30 animate-ping pointer-events-none" />
-          
           <div className="flex flex-col items-center justify-center">
             <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
             <span className="text-[9px] font-black tracking-wider uppercase leading-none mt-0.5">SOS</span>

@@ -53,7 +53,11 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
     'Other reason'
   ];
 
-  const estimatedEarning = order.driverEarnings || order.deliveryFee || (order.total ? (parseFloat(order.total) * 0.15).toFixed(0) : '0');
+  const estimatedEarning = (order.deliveryFee !== undefined && order.deliveryFee !== null && Number(order.deliveryFee) > 0)
+    ? Number(order.deliveryFee)
+    : (order.driverEarnings !== undefined && order.driverEarnings !== null && Number(order.driverEarnings) > 0)
+      ? Number(order.driverEarnings)
+      : 30;
 
   return (
     <div 
@@ -81,7 +85,9 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                </div>
                
                <h2 className="relative z-10 text-xl font-black text-slate-900 tracking-tight uppercase">New Delivery Request</h2>
-               <p className="relative z-10 text-xs font-semibold text-slate-500 uppercase tracking-widest mt-1">Order #{order.id}</p>
+               <p className="relative z-10 text-xs font-semibold text-slate-500 uppercase tracking-widest mt-1">
+                 Order #{order.displayOrderNumber || order.displayOrderId || (order.id && order.id.length > 12 ? order.id.slice(-8).toUpperCase() : order.id)}
+               </p>
             </div>
 
             <div className="p-6 space-y-6">

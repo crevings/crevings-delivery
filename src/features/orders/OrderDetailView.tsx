@@ -8,6 +8,7 @@ import { Order } from '@/types';
 import { ChatView } from './ChatView';
 
 import { BASE_URL } from '@/api/fetcher';
+import { openMapsNavigation } from '@/utils/navigation';
 import { updateOrderStatus } from '@/api/orders';
 
 interface OrderDetailViewProps {
@@ -105,6 +106,13 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   
   const currentStatusIndex = getStatusIndex();
 
+  const isRestaurantReady = 
+    (order.status || '').toUpperCase() === 'READY' || 
+    (order.status || '').toUpperCase() === 'READY_FOR_PICKUP' || 
+    (order.status || '').toUpperCase() === 'OUT FOR DELIVERY' || 
+    (order.status || '').toUpperCase() === 'OUT_FOR_DELIVERY' || 
+    (order.status || '').toUpperCase() === 'COMPLETED';
+
   const getButtonText = () => {
     const s = (currentStatus || '').toUpperCase();
     switch(s) {
@@ -114,7 +122,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       case 'READY_FOR_PICKUP':
       case 'DRIVER_ASSIGNED': return 'Arrived at Restaurant';
       case 'ARRIVED':
-      case 'DRIVER_ARRIVED': return 'Order Picked Up';
+      case 'DRIVER_ARRIVED': 
+        return isRestaurantReady ? 'Order Picked Up' : 'Waiting for Food Preparation';
       case 'OUT FOR DELIVERY':
       case 'OUT_FOR_DELIVERY':
       case 'PICKED UP': return 'Arrived at Customer Location';
@@ -130,18 +139,31 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     const btnText = getButtonText();
     
     if (btnText === 'Arrived at Restaurant') {
-      // Sync with backend so the consumer sees "Driver has arrived at the restaurant".
+      // Sync with backend so the restaurant & consumer see "Driver has arrived at the restaurant".
       updateOrderStatus(realOrderId, 'DRIVER_ARRIVED').catch(err =>
         console.error('Failed to sync driver arrival:', err)
       );
       setCurrentStatus('DRIVER_ARRIVED');
       onUpdateOrderStatus?.(order.id, 'DRIVER_ARRIVED');
-      setOtpValue(['', '', '', '', '', '']);
-      setShowPickupOtpSheet(true);
+      
+      // If the food is already marked ready by the restaurant, immediately offer OTP
+      if (isRestaurantReady) {
+        setOtpValue(['', '', '', '', '', '']);
+        setShowPickupOtpSheet(true);
+      }
+      return;
+    }
+
+    if (btnText === 'Waiting for Food Preparation') {
+      alert('Food is still being prepared by the restaurant. You can collect the order and enter the Pickup PIN once the restaurant marks it as Ready.');
       return;
     }
 
     if (btnText === 'Order Picked Up') {
+      if (!isRestaurantReady) {
+        alert('Food is still being prepared by the restaurant. Please wait until the restaurant marks it as Ready.');
+        return;
+      }
       setOtpValue(['', '', '', '', '', '']);
       setShowPickupOtpSheet(true);
       return;
@@ -261,6 +283,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     }
   };
 
+  const displayNum = order.displayOrderNumber || order.displayOrderId || (order.id && order.id.length > 12 ? order.id.slice(-8).toUpperCase() : order.id);
+
   if (showChat) {
     return <ChatView order={order} onBack={() => setShowChat(false)} />;
   }
@@ -269,42 +293,42 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     <div className="fixed inset-0 z-[150] bg-[#FFFFFF] flex flex-col animate-in slide-in-from-right duration-300 overflow-y-auto pb-28">
       
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4 bg-[#FFFFFF] sticky top-0 z-10 shrink-0">
-        <div className="flex items-center gap-4">
-          <button onClick={handleBack} className="p-1 -ml-1 text-slate-700 active:bg-slate-50 rounded-full">
-            <ArrowLeft size={24} />
+      <div className="flex items-center justify-between px-4 py-4 bg-[#FFFFFF] sticky top-0 z-10 shrink-0 border-b border-slate-100">
+        <div className="flex items-center gap-3">
+          <button onClick={handleBack} className="p-1.5 -ml-1 text-slate-700 active:bg-slate-100 rounded-xl transition-colors">
+            <ArrowLeft size={22} />
           </button>
-          <h1 className="text-[20px] font-bold text-slate-800 tracking-tight">Order #{order.id}</h1>
+          <h1 className="text-[18px] font-black text-slate-900 tracking-tight">Order #{displayNum}</h1>
         </div>
-        <button className="text-slate-500 p-1 bg-slate-50 rounded-full">
-          <Headset size={22} />
+        <button className="text-slate-500 p-2 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+          <Headset size={20} />
         </button>
       </div>
 
       <div className="p-4 space-y-4">
-        
-        {/* Quick Stats Card */}
-        <div className="bg-[#FFFFFF] rounded-2xl border border-[#E5E7EB] flex divide-x divide-slate-100">
-          <div className="flex-1 p-4 flex flex-col items-center justify-center text-center">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Distance</span>
-            <span className="text-[16px] font-black text-slate-800">{order.pickupDistanceKm ? `${order.pickupDistanceKm} km` : '--'}</span>
-          </div>
-          <div className="flex-1 p-4 flex flex-col items-center justify-center text-center">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Est. Time</span>
-            <span className="text-[16px] font-black text-slate-800">{order.time !== '--' ? order.time : '--'}</span>
-          </div>
-          <div className="flex-1 p-4 flex flex-col items-center justify-center text-center">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Earnings</span>
-            <span className="text-[16px] font-black text-emerald-600">{formatINR(tripEarnings)}</span>
-          </div>
-        </div>
+              
+              {/* Quick Stats Card */}
+              <div className="bg-[#FFFFFF] rounded-2xl border border-[#E5E7EB] flex divide-x divide-slate-100 shadow-xs">
+                <div className="flex-1 p-3.5 flex flex-col items-center justify-center text-center">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Distance</span>
+                  <span className="text-[15px] font-black text-slate-800">{order.pickupDistanceKm ? `${order.pickupDistanceKm} km` : '--'}</span>
+                </div>
+                <div className="flex-1 p-3.5 flex flex-col items-center justify-center text-center">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Est. Time</span>
+                  <span className="text-[15px] font-black text-slate-800">{order.time !== '--' ? order.time : '--'}</span>
+                </div>
+                <div className="flex-1 p-3.5 flex flex-col items-center justify-center text-center">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Earnings</span>
+                  <span className="text-[15px] font-black text-emerald-600">{formatINR(tripEarnings)}</span>
+                </div>
+              </div>
 
-        {/* Order Info */}
-        <div className="bg-[#FFFFFF] rounded-2xl border border-[#E5E7EB] p-4">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-slate-500 text-[13px] font-bold uppercase tracking-wide">Order #{order.id}</span>
-            <span className={`px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider ${order.status === 'Preparing' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>{order.status}</span>
-          </div>
+              {/* Order Info */}
+              <div className="bg-[#FFFFFF] rounded-2xl border border-[#E5E7EB] p-4 shadow-xs">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-slate-700 text-[13px] font-black tracking-wide">Order #{displayNum}</span>
+                  <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${order.status === 'Preparing' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>{order.status}</span>
+                </div>
           <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
             <div>
               <p className="text-[11px] font-bold text-slate-500 tracking-wide uppercase mb-0.5">Payment Method</p>
@@ -343,7 +367,10 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
                 Call
               </button>
             )}
-            <button className="flex-1 h-12 bg-blue-50 text-blue-600 font-bold rounded-xl flex items-center justify-center gap-2 active:bg-blue-100 transition-colors">
+            <button 
+              onClick={() => openMapsNavigation(order.restaurantAddress, order.restaurantName)}
+              className="flex-1 h-12 bg-blue-50 text-blue-600 font-bold rounded-xl flex items-center justify-center gap-2 active:bg-blue-100 transition-colors"
+            >
               <Navigation size={18} className="rotate-45" />
               Navigate
             </button>
@@ -378,7 +405,10 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             >
               <MessageCircle size={20} />
             </button>
-            <button className="h-12 px-4 bg-blue-50 text-blue-600 font-bold rounded-xl flex items-center justify-center gap-2 active:bg-blue-100 transition-colors flex-1">
+            <button 
+              onClick={() => openMapsNavigation(order.address, order.customer)}
+              className="h-12 px-4 bg-blue-50 text-blue-600 font-bold rounded-xl flex items-center justify-center gap-2 active:bg-blue-100 transition-colors flex-1"
+            >
               <Navigation size={18} className="rotate-45" />
               Navigate
             </button>
@@ -420,13 +450,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               <div className="px-5 pb-5 pt-1 space-y-3 border-t border-slate-100 bg-white">
                 {orderItems.length > 0 ? (
                   orderItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between gap-3">
-                      <p className="text-[15px] text-slate-700">{item.quantity} x {item.name}</p>
-                      {typeof item.price === 'number' && (
-                        <span className="text-[14px] font-semibold text-slate-600">
-                          {formatINR(item.price * item.quantity)}
-                        </span>
-                      )}
+                    <div key={idx} className="flex items-center justify-between py-0.5">
+                      <p className="text-[15px] font-medium text-slate-800">{item.quantity} x {item.name}</p>
                     </div>
                   ))
                 ) : (
@@ -516,14 +541,20 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
                 <X size={20} />
               </button>
             </div>
-            <p className="text-slate-500 mb-6 text-[15px]">Ask restaurant for the 6-digit PIN to confirm pickup.</p>
+            <p className="text-slate-500 mb-4 text-[15px]">Ask restaurant for the 6-digit PIN to confirm pickup.</p>
+            {!isRestaurantReady && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl mb-4 text-[13px] font-medium leading-relaxed">
+                ⏳ Food is currently being prepared by the restaurant. You can only verify the Pickup PIN once the restaurant marks this order as <strong>Ready</strong>.
+              </div>
+            )}
             <div className="flex gap-2 justify-between mb-8">
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <input 
                   key={index}
                   type="text"
                   maxLength={1}
-                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                  disabled={!isRestaurantReady}
+                  className={`w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none ${!isRestaurantReady ? 'opacity-50 cursor-not-allowed' : ''}`}
                   value={otpValue[index]}
                   onChange={(e) => {
                     const newOtp = [...otpValue];
@@ -535,10 +566,10 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             </div>
             <button 
               onClick={handlePickupOtpVerify}
-              disabled={isVerifying}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
+              disabled={isVerifying || !isRestaurantReady}
+              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Verify OTP
+              {!isRestaurantReady ? 'Waiting for Order to be Ready' : 'Verify OTP'}
             </button>
           </div>
         </div>

@@ -1,200 +1,248 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { User, Mail, MessageSquare, Phone, Lock, ShieldCheck, KeyRound, Package, Sandwich, Pizza, ShoppingBag, Coffee, Zap, Utensils, TrendingUp, CreditCard, BarChart3, Bell, Store, FileText, Shield, Tag, QrCode } from 'lucide-react';
-import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
-import { BASE_URL } from '@/api/fetcher';
-import { useAuthStore } from '@/app/store';
-import { useAuth } from '@/app/providers';
-import { LoadingSpinner } from '@/shared/components/layout';
+import React, { useState, useRef, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { MessageSquare, Loader2, ShieldCheck } from "lucide-react";
+import { post, ResponseError } from "@/api/fetcher";
+import { useAuth } from "@/app/providers";
+import { useAuthStore } from "@/app/store";
+import { LoadingSpinner } from "@/shared/components/layout";
 
-type LoginStep = 'hero' | 'input' | 'otp' | 'email-method' | 'email-otp-input' | 'email-otp-verify' | 'email-password-step1' | 'email-password-step2' | 'welcome';
+export interface DeliveryAuthUser {
+  referenceId?: string;
+  id?: string;
+  email?: string;
+  phone?: string;
+  name?: string;
+  role?: string;
+}
 
+interface LoginViewProps {
+  onLoginSuccess?: (user: DeliveryAuthUser) => void;
+  onNavigateToOnboarding?: () => void;
+}
 
-export const LoginView: React.FC = () => {
+type LoginStep = "input" | "otp" | "name";
+
+/**
+ * Map a failed OTP verification to a user-facing message.
+ */
+const otpFailureMessage = (err: unknown): string => {
+  const info = (err as ResponseError | null)?.info;
+  const code =
+    info && typeof info === "object" && "error" in info
+      ? (info as { error?: unknown }).error
+      : undefined;
+  if (code === "OTP_EXPIRED") return "OTP is expired";
+  return "Incorrect OTP";
+};
+
+export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const navigate = useNavigate();
-  const isLoggedIn = useAuthStore(s => s.isLoggedIn);
-  const isLoadingAuth = useAuthStore(s => s.isLoadingAuth);
-  const setIsOnboarding = useAuthStore(s => s.setIsOnboarding);
+  const location = useLocation();
   const { login: authLogin } = useAuth();
-  const [view, setView] = useState<LoginStep>('hero');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [otpError, setOtpError] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const isLoadingAuth = useAuthStore((s) => s.isLoadingAuth);
 
-  const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const marqueeCardsRow1 = [
-    { text: "Manage your restaurant", icon: <Utensils size={16} className="text-blue-500" />, bg: "bg-blue-50 border-blue-100 text-blue-700" },
-    { text: "Grow your business", icon: <TrendingUp size={16} className="text-emerald-500" />, bg: "bg-emerald-50 border-emerald-100 text-emerald-700" },
-    { text: "Instant payouts", icon: <CreditCard size={16} className="text-purple-500" />, bg: "bg-purple-50 border-purple-100 text-purple-700" },
-    { text: "Track analytics", icon: <BarChart3 size={16} className="text-orange-500" />, bg: "bg-orange-50 border-orange-100 text-orange-700" },
-    { text: "Digital Menu", icon: <Pizza size={16} className="text-rose-500" />, bg: "bg-rose-50 border-rose-100 text-rose-700" },
-    { text: "Staff Management", icon: <User size={16} className="text-indigo-500" />, bg: "bg-indigo-50 border-indigo-100 text-indigo-700" },
-  ];
-
-  const marqueeCardsRow2 = [
-    { text: "Inventory Control", icon: <Package size={16} className="text-cyan-500" />, bg: "bg-cyan-50 border-cyan-100 text-cyan-700" },
-    { text: "Customer Insights", icon: <MessageSquare size={16} className="text-pink-500" />, bg: "bg-pink-50 border-pink-100 text-pink-700" },
-    { text: "Marketing Tools", icon: <Zap size={16} className="text-yellow-500" />, bg: "bg-yellow-50 border-yellow-100 text-yellow-700" },
-    { text: "Table Booking", icon: <Coffee size={16} className="text-teal-500" />, bg: "bg-teal-50 border-teal-100 text-teal-700" },
-    { text: "Online Orders", icon: <ShoppingBag size={16} className="text-red-500" />, bg: "bg-red-50 border-red-100 text-red-700" },
-    { text: "Billing & Invoicing", icon: <Sandwich size={16} className="text-lime-500" />, bg: "bg-lime-50 border-lime-100 text-lime-700" },
-  ];
-
-  const marqueeCardsRow3 = [
-    { text: "Real-time Alerts", icon: <Bell size={16} className="text-amber-500" />, bg: "bg-amber-50 border-amber-100 text-amber-700" },
-    { text: "Multi-Outlet", icon: <Store size={16} className="text-fuchsia-500" />, bg: "bg-fuchsia-50 border-fuchsia-100 text-fuchsia-700" },
-    { text: "Custom Reports", icon: <FileText size={16} className="text-sky-500" />, bg: "bg-sky-50 border-sky-100 text-sky-700" },
-    { text: "Role Access", icon: <Shield size={16} className="text-violet-500" />, bg: "bg-violet-50 border-violet-100 text-violet-700" },
-    { text: "Discount Codes", icon: <Tag size={16} className="text-emerald-500" />, bg: "bg-emerald-50 border-emerald-100 text-emerald-700" },
-    { text: "QR Ordering", icon: <QrCode size={16} className="text-blue-500" />, bg: "bg-blue-50 border-blue-100 text-blue-700" },
-  ];
-
-  // If user is already authenticated (via cookie/session), redirect to dashboard
+  // If already authenticated, navigate to dashboard immediately
   useEffect(() => {
     if (!isLoadingAuth && isLoggedIn) {
-      navigate('/', { replace: true });
+      navigate("/", { replace: true });
     }
   }, [isLoggedIn, isLoadingAuth, navigate]);
 
-  // Complete a successful login: persist session data, mark the store
-  // authenticated, and navigate to dashboard.
-  const completeLogin = (data: { token?: string; user?: { email?: string; role?: string; referenceId?: string } }) => {
-    authLogin(data.token, data.user);
-    navigate('/', { replace: true });
+  const [view, setViewState] = useState<LoginStep>("input");
+
+  useEffect(() => {
+    const step = (location.state as { loginStep?: LoginStep } | null)?.loginStep;
+    setViewState(step === "otp" || step === "name" ? step : "input");
+  }, [location.state]);
+
+  const setView = (next: LoginStep) => {
+    setViewState(next);
+    navigate(location.pathname + location.search, {
+      state: { ...((location.state as Record<string, unknown>) || {}), loginStep: next },
+    });
   };
 
-  const handleOtpChange = (value: string, index: number) => {
-    if (isNaN(Number(value))) return;
-    setOtpError(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [authenticatedUser, setAuthenticatedUser] = useState<DeliveryAuthUser | null>(null);
+  const [showRestoredModal, setShowRestoredModal] = useState(false);
+  const [isNewUserLogin, setIsNewUserLogin] = useState(false);
 
+  const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleOtpChange = (value: string, index: number) => {
+    setOtpError(null);
+    setApiError(null);
+
+    const digitsOnly = value.replace(/\D/g, "");
+
+    // Handle multi-digit entry (e.g. browser autofill)
+    if (digitsOnly.length > 1) {
+      const newOtp = [...otp];
+      const chars = digitsOnly.slice(0, 6 - index).split("");
+      chars.forEach((char, i) => {
+        if (index + i < 6) {
+          newOtp[index + i] = char;
+        }
+      });
+      setOtp(newOtp);
+      const nextFocus = Math.min(index + chars.length, 5);
+      otpInputs.current[nextFocus]?.focus();
+      return;
+    }
+
+    // Single digit entry
     const newOtp = [...otp];
-    newOtp[index] = value.substring(value.length - 1);
+    newOtp[index] = digitsOnly;
     setOtp(newOtp);
 
-    if (value && index < 5) {
+    // Auto shift to next block seamlessly if digit entered
+    if (digitsOnly && index < 5) {
       otpInputs.current[index + 1]?.focus();
     }
   };
 
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>, startIndex: number) => {
+    e.preventDefault();
+    setOtpError(null);
+    setApiError(null);
+
+    const pastedText = e.clipboardData.getData("text").replace(/\D/g, "");
+    if (!pastedText) return;
+
+    const newOtp = [...otp];
+    const digits = pastedText.slice(0, 6).split("");
+    const targetStart = digits.length === 6 ? 0 : startIndex;
+
+    digits.forEach((char, i) => {
+      if (targetStart + i < 6) {
+        newOtp[targetStart + i] = char;
+      }
+    });
+
+    setOtp(newOtp);
+
+    const nextFocusIndex = Math.min(targetStart + digits.length, 5);
+    otpInputs.current[nextFocusIndex]?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
+    if (e.key === "Backspace") {
+      if (!otp[index] && index > 0) {
+        e.preventDefault();
+        const newOtp = [...otp];
+        newOtp[index - 1] = "";
+        setOtp(newOtp);
+        otpInputs.current[index - 1]?.focus();
+      } else if (otp[index]) {
+        const newOtp = [...otp];
+        newOtp[index] = "";
+        setOtp(newOtp);
+      }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
       otpInputs.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      otpInputs.current[index + 1]?.focus();
     }
   };
 
-
-  const verifyOtp = async () => {
-    const enteredOtp = otp.join('');
+  const verifyOtpAndLogin = async () => {
+    const enteredOtp = otp.join("");
     if (enteredOtp.length < 6) return;
 
     setIsVerifying(true);
-    setOtpError(false);
+    setApiError(null);
 
     try {
-      const payload = view === 'email-otp-verify'
-        ? { email, otp: enteredOtp }
-        : { phone: phoneNumber, otp: enteredOtp };
-
-      const res = await fetch(`${BASE_URL}/delivery/auth/verify-otp`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+      const data = await post<{
+        success: boolean;
+        message?: string;
+        error?: string;
+        token?: string;
+        user?: DeliveryAuthUser;
+        isNewUser?: boolean;
+        deletionCancelled?: boolean;
+      }>("/delivery/auth/verify-otp", {
+        phone: phoneNumber,
+        otp: enteredOtp,
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        completeLogin(data);
-      } else {
-        alert(data.message || 'Invalid or expired OTP');
-        setOtpError(true);
+
+      if (!data.success) {
+        throw new Error(data.error === "OTP_EXPIRED" ? "OTP is expired" : "Incorrect OTP");
       }
-    } catch (err: any) {
-      alert('Network error verifying OTP');
-      setOtpError(true);
+
+      if (data.user) {
+        setAuthenticatedUser(data.user);
+        authLogin(data.token, data.user);
+        if (onLoginSuccess) {
+          onLoginSuccess(data.user);
+        }
+      }
+
+      const isNew = Boolean(
+        data.isNewUser ||
+          !data.user?.name ||
+          data.user.name === "New User" ||
+          data.user.name === "Delivery Partner"
+      );
+      setIsNewUserLogin(isNew);
+
+      if (data.deletionCancelled) {
+        setShowRestoredModal(true);
+      } else {
+        navigate("/", { replace: true });
+      }
+    } catch (err) {
+      setOtpError(otpFailureMessage(err));
+      setApiError(null);
     } finally {
       setIsVerifying(false);
     }
   };
 
-  const handlePasswordLogin = async () => {
-    if (!email || password.length < 6) return;
+  const handleSaveNameAndContinue = async () => {
+    if (!nameInput.trim()) return;
 
-    setIsVerifying(true);
+    setIsSavingName(true);
+    setApiError(null);
+
     try {
-      const res = await fetch(`${BASE_URL}/delivery/auth/verify-otp`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        completeLogin(data);
-      } else {
-        alert(data.message || 'Invalid credentials');
+      const baseUser = authenticatedUser || {
+        name: nameInput.trim(),
+        phone: phoneNumber,
+        email: "",
+        role: "DELIVERY_PARTNER",
+      };
+      const updatedUser = { ...baseUser, name: nameInput.trim() };
+      authLogin(undefined, updatedUser);
+      if (onLoginSuccess) {
+        onLoginSuccess(updatedUser);
       }
-    } catch (err: any) {
-      alert(err.message || 'Network error logging in');
+      navigate("/", { replace: true });
+    } catch (err) {
+      setApiError(err instanceof Error ? err.message : "Could not save name. Please try again.");
     } finally {
-      setIsVerifying(false);
+      setIsSavingName(false);
     }
   };
 
-  const renderMarquee = () => {
-    const row1 = [...marqueeCardsRow1, ...marqueeCardsRow1];
-    const row2 = [...marqueeCardsRow2, ...marqueeCardsRow2];
-    const row3 = [...marqueeCardsRow3, ...marqueeCardsRow3];
-
-    return (
-      <div className="w-[calc(100%+4rem)] -mx-8 overflow-hidden mb-8 flex flex-col gap-3 relative">
-        <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
-        <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
-
-        <motion.div
-          className="flex gap-3 w-max"
-          animate={{ x: ["-50%", "0%"] }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-        >
-          {row1.map((card, i) => (
-            <div key={i} className={`flex items-center gap-2 px-4 py-2.5 rounded-full border ${card.bg} whitespace-nowrap`}>
-              {card.icon}
-              <span className="text-[14px] font-semibold">{card.text}</span>
-            </div>
-          ))}
-        </motion.div>
-
-        <motion.div
-          className="flex gap-3 w-max"
-          animate={{ x: ["-50%", "0%"] }}
-          transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
-        >
-          {row2.map((card, i) => (
-            <div key={i} className={`flex items-center gap-2 px-4 py-2.5 rounded-full border ${card.bg} whitespace-nowrap`}>
-              {card.icon}
-              <span className="text-[14px] font-semibold">{card.text}</span>
-            </div>
-          ))}
-        </motion.div>
-
-        <motion.div
-          className="flex gap-3 w-max"
-          animate={{ x: ["-50%", "0%"] }}
-          transition={{ duration: 28, repeat: Infinity, ease: "linear" }}
-        >
-          {row3.map((card, i) => (
-            <div key={i} className={`flex items-center gap-2 px-4 py-2.5 rounded-full border ${card.bg} whitespace-nowrap`}>
-              {card.icon}
-              <span className="text-[14px] font-semibold">{card.text}</span>
-            </div>
-          ))}
-        </motion.div>
-      </div>
-    );
+  const triggerSendWhatsappOtp = async (targetPhone: string) => {
+    try {
+      const data = await post<unknown>("/delivery/auth/request-whatsapp-otp", {
+        phone: targetPhone,
+      });
+      console.log("📱 WhatsApp OTP response:", data);
+    } catch (err) {
+      console.error("Failed to trigger WhatsApp OTP:", err);
+    }
   };
 
   if (isLoadingAuth) {
@@ -202,42 +250,35 @@ export const LoginView: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 z-[500] bg-[#FFFFFF] flex flex-col font-sans overflow-hidden">
-      <div className="flex-1 flex flex-col items-center justify-center px-8 text-center animate-in fade-in duration-700 pt-12">
-        <h2 className="text-[16px] font-bold text-slate-900 mb-8">Business Partner</h2>
+    <div className="fixed inset-0 z-[500] bg-white flex flex-col font-sans overflow-hidden app-container shadow-2xl pt-safe-3">
+      {/* Top Hero Section with Full Background Image */}
+      <div
+        className="flex-1 w-full bg-cover bg-center bg-no-repeat relative"
+        style={{ backgroundImage: "url('/Loginbgimg.jpeg')" }}
+      />
 
-        {renderMarquee()}
-
-        {view !== 'hero' && (
-          <h1 className="text-[22px] font-bold text-slate-900 tracking-tight leading-[1.3] mb-2">
-            The Operating System For<br />Your <span className="text-[#7C3AED]">Food Business</span>
-          </h1>
-        )}
-      </div>
-
-      {/* Bottom Section */}
-      <div className="px-6 pb-8">
-        {view === 'hero' && (
-          <div className="space-y-4 animate-in fade-in duration-300">
-            <button onClick={() => setView('input')} className="w-full h-14 bg-[#1E90FF] text-white rounded-xl font-semibold text-[16px] flex items-center justify-center active:scale-[0.98] transition-all shadow-sm">
-              Login
-            </button>
-
-            <button onClick={() => setIsOnboarding(true)} className="w-full h-14 bg-[#FFFFFF] text-slate-900 border-[1.5px] border-slate-900 rounded-xl font-semibold text-[16px] flex items-center justify-center active:scale-[0.98] transition-all">
-              Become a Partner
-            </button>
+      {/* Bottom Action Sheet */}
+      <div className="px-6 pb-8 bg-white border-t border-slate-100 pt-4 relative z-20 shadow-lg">
+        {apiError && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-semibold text-center">
+            {apiError}
           </div>
         )}
 
-        {view === 'input' && (
+        {view === "input" && (
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
             <div className="text-left">
               <label className="text-[14px] font-medium text-slate-700">Mobile Number</label>
             </div>
 
-            <div className="flex items-center h-14 border border-slate-200 rounded-xl overflow-hidden focus-within:border-[#1E90FF] focus-within:ring-1 focus-within:ring-[#1E90FF] bg-[#FFFFFF] transition-all">
-              <div className="flex items-center gap-2 px-4 border-r border-slate-200 bg-[#FFFFFF] h-full">
-                <img src="https://flagcdn.com/w20/in.png" alt="India" className="w-5 h-3.5 object-cover rounded-sm shadow-sm" />
+            <div className="flex items-center h-14 border border-slate-200 rounded-xl overflow-hidden focus-within:border-[#00bd6f] focus-within:ring-1 focus-within:ring-[#00bd6f] bg-white transition-all">
+              <div className="flex items-center gap-2 px-4 border-r border-slate-200 bg-white h-full shrink-0">
+                <img
+                  loading="lazy"
+                  src="https://flagcdn.com/w20/in.png"
+                  alt="India"
+                  className="w-5 h-3.5 object-cover rounded-sm shadow-sm"
+                />
                 <span className="text-[15px] font-medium text-slate-700">+91</span>
               </div>
               <input
@@ -245,249 +286,187 @@ export const LoginView: React.FC = () => {
                 placeholder="Enter your phone number"
                 value={phoneNumber}
                 maxLength={10}
-                onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
                 className="flex-1 px-4 text-[15px] font-medium text-slate-900 bg-transparent focus:outline-none placeholder:text-slate-400"
               />
             </div>
 
-            <div className="flex gap-3">
-              <button onClick={() => setView('hero')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
-                Back
-              </button>
-              <button
-                onClick={() => phoneNumber.length === 10 && setView('otp')}
-                disabled={phoneNumber.length < 10}
-                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${phoneNumber.length === 10 ? 'bg-[#1E90FF] text-white active:scale-[0.98]' : 'bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed'}`}
-              >
-                Continue
-              </button>
-            </div>
-
-            <button onClick={() => setView('email-method')} className="w-full h-14 bg-[#FFFFFF] text-slate-700 rounded-xl font-semibold text-[15px] flex items-center justify-center gap-2 active:scale-[0.98] transition-all border border-slate-200 hover:bg-slate-50">
-              <Mail size={18} className="text-slate-500" /> Login with Email
+            <button
+              type="button"
+              onClick={() => {
+                if (phoneNumber.length === 10) {
+                  setView("otp");
+                  triggerSendWhatsappOtp(phoneNumber);
+                }
+              }}
+              disabled={phoneNumber.length < 10}
+              className={`w-full h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${
+                phoneNumber.length === 10
+                  ? "bg-[#00bd6f] text-white active:scale-[0.98] shadow-md shadow-emerald-500/20"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
+              }`}
+            >
+              Continue
             </button>
           </div>
         )}
 
-        {view === 'otp' && (
+        {view === "otp" && (
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
             <div className="text-left">
-              <p className="text-[14px] text-slate-500">Code sent to <span className="font-bold text-slate-900">+91 {phoneNumber}</span></p>
+              <p className="text-[14px] text-slate-500">
+                Code sent to <span className="font-bold text-slate-900">+91 {phoneNumber}</span>
+              </p>
             </div>
 
             <div className="flex justify-between gap-2">
               {otp.map((digit, index) => (
                 <input
                   key={index}
-                  ref={(el) => { otpInputs.current[index] = el; }}
+                  ref={(el) => {
+                    otpInputs.current[index] = el;
+                  }}
                   type="tel"
-                  maxLength={1}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   value={digit}
                   onChange={(e) => handleOtpChange(e.target.value, index)}
                   onKeyDown={(e) => handleKeyDown(e, index)}
-                  className={`w-[46px] h-[54px] text-center text-xl font-bold rounded-xl border transition-all focus:outline-none ${otpError
-                      ? 'border-rose-300 bg-rose-50 text-rose-600'
-                      : digit ? 'border-[#1E90FF] bg-blue-50 text-[#1E90FF]' : 'border-slate-200 bg-[#FFFFFF] focus:border-[#1E90FF]'
-                    }`}
+                  onPaste={(e) => handleOtpPaste(e, index)}
+                  onFocus={(e) => e.target.select()}
+                  className={`w-[46px] h-[54px] text-center text-xl font-bold rounded-xl border transition-all focus:outline-none ${
+                    otpError
+                      ? "border-rose-300 bg-rose-50 text-rose-600"
+                      : digit
+                      ? "border-[#00bd6f] bg-emerald-50 text-[#00bd6f]"
+                      : "border-slate-200 bg-white focus:border-[#00bd6f]"
+                  }`}
                 />
               ))}
             </div>
 
-            {otpError && <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">Invalid code. Please try again.</p>}
+            {otpError && (
+              <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">
+                {otpError}
+              </p>
+            )}
 
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setView('input')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
+              <button
+                onClick={() => {
+                  if ((location.state as { loginStep?: LoginStep } | null)?.loginStep) {
+                    navigate(-1);
+                  } else {
+                    setViewState("input");
+                  }
+                }}
+                className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]"
+              >
                 Back
               </button>
               <button
-                onClick={verifyOtp}
-                disabled={otp.join('').length < 6 || isVerifying}
-                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${otp.join('').length === 6 && !isVerifying ? 'bg-[#1E90FF] text-white active:scale-[0.98]' : 'bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed'
-                  }`}
+                onClick={verifyOtpAndLogin}
+                disabled={otp.join("").length < 6 || isVerifying}
+                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${
+                  otp.join("").length === 6 && !isVerifying
+                    ? "bg-[#00bd6f] text-white active:scale-[0.98] shadow-md shadow-emerald-500/20"
+                    : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                }`}
               >
-                {isVerifying ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Continue'}
+                {isVerifying ? <Loader2 size={22} className="animate-spin text-white" /> : "Verify & Continue"}
               </button>
             </div>
 
-            <div className="flex gap-3 w-full">
-              <button className="flex-1 h-14 rounded-xl font-medium text-[14px] text-slate-700 bg-[#FFFFFF] border border-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                <Phone size={18} className="text-slate-500" /> Resend SMS
-              </button>
-              <button className="flex-1 h-14 rounded-xl font-medium text-[14px] text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-                <MessageSquare size={18} /> WhatsApp
+            <div className="w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  if (phoneNumber) triggerSendWhatsappOtp(phoneNumber);
+                }}
+                className="w-full h-12 rounded-xl font-medium text-[13px] text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              >
+                <MessageSquare size={16} /> Resend WhatsApp OTP
               </button>
             </div>
           </div>
         )}
 
-        {view === 'email-method' && (
+        {view === "name" && (
           <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
             <div className="text-left">
-              <label className="text-[14px] font-medium text-slate-700">Email Login</label>
+              <h3 className="text-[18px] font-bold text-slate-900 mb-1">What should we call you?</h3>
+              <p className="text-[13px] text-slate-500">Please enter your name to complete your profile.</p>
             </div>
 
-            <div className="space-y-3">
-              <button onClick={() => setView('email-otp-input')} className="w-full p-4 border border-slate-200 rounded-xl flex items-center gap-4 hover:border-[#1E90FF] hover:bg-blue-50/50 transition-all active:scale-[0.98] text-left">
-                <div className="w-12 h-12 rounded-full bg-blue-50 text-[#1E90FF] flex items-center justify-center shrink-0"><ShieldCheck size={24} /></div>
-                <div>
-                  <p className="text-[16px] font-bold text-slate-900">Login with OTP</p>
-                </div>
-              </button>
-
-              <button onClick={() => setView('email-password-step1')} className="w-full p-4 border border-slate-200 rounded-xl flex items-center gap-4 hover:border-[#1E90FF] hover:bg-blue-50/50 transition-all active:scale-[0.98] text-left">
-                <div className="w-12 h-12 rounded-full bg-slate-50 text-slate-600 flex items-center justify-center shrink-0"><KeyRound size={24} /></div>
-                <div>
-                  <p className="text-[16px] font-bold text-slate-900">Login with Password</p>
-                </div>
-              </button>
+            <div className="flex items-center h-14 border border-slate-200 rounded-xl overflow-hidden focus-within:border-[#00bd6f] focus-within:ring-1 focus-within:ring-[#00bd6f] bg-white transition-all px-4">
+              <input
+                type="text"
+                placeholder="Enter your full name"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                className="flex-1 text-[15px] font-medium text-slate-900 bg-transparent focus:outline-none placeholder:text-slate-400"
+              />
             </div>
 
-            <button onClick={() => setView('input')} className="w-full h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
-              Back
+            <button
+              type="button"
+              onClick={handleSaveNameAndContinue}
+              disabled={!nameInput.trim() || isSavingName}
+              className={`w-full h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${
+                nameInput.trim() && !isSavingName
+                  ? "bg-[#00bd6f] text-white active:scale-[0.98] shadow-md shadow-emerald-500/20"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
+              }`}
+            >
+              {isSavingName ? <Loader2 size={22} className="animate-spin text-white" /> : "Save & Continue"}
             </button>
           </div>
         )}
 
-        {view === 'email-otp-input' && (
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="text-left">
-              <label className="text-[14px] font-medium text-slate-700">Email Address</label>
-            </div>
-
-            <div className="flex items-center h-14 border border-slate-200 rounded-xl px-4 focus-within:border-[#1E90FF] focus-within:ring-1 focus-within:ring-[#1E90FF] bg-[#FFFFFF] transition-all">
-              <Mail size={20} className="text-slate-400 mr-3" />
-              <input type="email" placeholder="restaurant@crevings.com" value={email} onChange={(e) => setEmail(e.target.value)} className="flex-1 text-[15px] font-medium text-slate-900 bg-transparent focus:outline-none placeholder:text-slate-400" />
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setView('email-method')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
-                Back
-              </button>
-              <button
-                onClick={() => email && setView('email-otp-verify')}
-                disabled={!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)}
-                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ? 'bg-[#1E90FF] text-white active:scale-[0.98]' : 'bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed'
-                  }`}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
-        {view === 'email-otp-verify' && (
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="text-left">
-              <p className="text-[14px] text-slate-500">Code sent to <span className="font-bold text-slate-900">{email}</span></p>
-            </div>
-
-            <div className="flex justify-between gap-2">
-              {otp.map((digit, index) => (
-                <input
-                  key={index}
-                  ref={(el) => { otpInputs.current[index] = el; }}
-                  type="tel"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleOtpChange(e.target.value, index)}
-                  onKeyDown={(e) => handleKeyDown(e, index)}
-                  className={`w-[46px] h-[54px] text-center text-xl font-bold rounded-xl border transition-all focus:outline-none ${otpError
-                      ? 'border-rose-300 bg-rose-50 text-rose-600'
-                      : digit ? 'border-[#1E90FF] bg-blue-50 text-[#1E90FF]' : 'border-slate-200 bg-[#FFFFFF] focus:border-[#1E90FF]'
-                    }`}
-                />
-              ))}
-            </div>
-
-            {otpError && <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">Invalid code. Please try again.</p>}
-
-            <div className="flex gap-3 pt-2">
-              <button onClick={() => setView('email-otp-input')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
-                Back
-              </button>
-              <button
-                onClick={verifyOtp}
-                disabled={otp.join('').length < 6 || isVerifying}
-                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${otp.join('').length === 6 && !isVerifying ? 'bg-[#1E90FF] text-white active:scale-[0.98]' : 'bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed'
-                  }`}
-              >
-                {isVerifying ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Continue'}
-              </button>
-            </div>
-
-            <button className="w-full h-14 rounded-xl font-medium text-[14px] text-slate-700 bg-[#FFFFFF] border border-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-              <Mail size={18} className="text-slate-500" /> Resend Email
-            </button>
-          </div>
-        )}
-
-        {view === 'email-password-step1' && (
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="text-left">
-              <label className="text-[14px] font-medium text-slate-700">Email Address</label>
-            </div>
-
-            <div className="flex items-center h-14 border border-slate-200 rounded-xl px-4 focus-within:border-[#1E90FF] focus-within:ring-1 focus-within:ring-[#1E90FF] bg-[#FFFFFF] transition-all">
-              <Mail size={20} className="text-slate-400 mr-3" />
-              <input type="email" placeholder="restaurant@crevings.com" value={email} onChange={(e) => setEmail(e.target.value)} className="flex-1 text-[15px] font-medium text-slate-900 bg-transparent focus:outline-none placeholder:text-slate-400" />
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setView('email-method')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
-                Back
-              </button>
-              <button
-                onClick={() => setView('email-password-step2')}
-                disabled={!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)}
-                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ? 'bg-[#1E90FF] text-white active:scale-[0.98]' : 'bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed'
-                  }`}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
-        {view === 'email-password-step2' && (
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <div className="text-left">
-              <p className="text-[14px] text-slate-500">Signing in as <span className="font-bold text-slate-900">{email}</span></p>
-            </div>
-
-            <div className="flex items-center h-14 border border-slate-200 rounded-xl px-4 focus-within:border-[#1E90FF] focus-within:ring-1 focus-within:ring-[#1E90FF] bg-[#FFFFFF] transition-all">
-              <Lock size={20} className="text-slate-400 mr-3" />
-              <input type={showPassword ? "text" : "password"} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="flex-1 text-[15px] font-medium text-slate-900 bg-transparent focus:outline-none placeholder:text-slate-400" />
-              <button onClick={() => setShowPassword(!showPassword)} className="text-[13px] font-semibold text-[#1E90FF] ml-3">
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
-            </div>
-
-            <div className="flex gap-3">
-              <button onClick={() => setView('email-password-step1')} className="w-1/3 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-[0.98]">
-                Back
-              </button>
-              <button
-                onClick={handlePasswordLogin}
-                disabled={!email || password.length < 6 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)}
-                className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${(email && password.length >= 6 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) ? 'bg-[#1E90FF] text-white active:scale-[0.98]' : 'bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed'
-                  }`}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-8 text-center border-t border-slate-100 pt-6">
-          <p className="text-[12px] text-slate-500 leading-relaxed">
-            By continuing, you agree to our<br />
-            <a href="#" className="text-[#1E90FF] hover:underline">Terms of Service</a> and <a href="#" className="text-[#1E90FF] hover:underline">Privacy Policy</a>
+        <div className="mt-5 text-center border-t border-slate-100 pt-3.5 px-2">
+          <p className="text-[8px] text-slate-400 leading-snug">
+            By continuing, you agree to receive important updates and promotional communications from CREVINGS via RCS, SMS, WhatsApp, email, and phone calls. By continuing, you also agree to our{" "}
+            <button type="button" onClick={() => navigate("/legal")} className="text-[#00bd6f] hover:underline font-semibold">Privacy Policy</button>,{" "}
+            <button type="button" onClick={() => navigate("/legal")} className="text-[#00bd6f] hover:underline font-semibold">Terms of Service</button>, and{" "}
+            <button type="button" onClick={() => navigate("/legal")} className="text-[#00bd6f] hover:underline font-semibold">Refund Policy</button>.
           </p>
         </div>
       </div>
+
+      {/* Account Restored Custom UI Modal */}
+      {showRestoredModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[28px] p-6 max-w-sm w-full shadow-2xl flex flex-col items-center text-center animate-in zoom-in-95 duration-200 border border-slate-100">
+            <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center text-[#00bd6f] mb-4 border border-emerald-100/60 shadow-sm">
+              <ShieldCheck className="w-9 h-9" strokeWidth={2.2} />
+            </div>
+
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Account Restored!</h3>
+            <p className="text-sm font-medium text-slate-500 mb-6 leading-relaxed">
+              Welcome back! Your scheduled account deletion request has been automatically cancelled and your account is fully retained.
+            </p>
+
+            <button
+              onClick={() => {
+                setShowRestoredModal(false);
+                if (isNewUserLogin) {
+                  setView("name");
+                } else {
+                  if (authenticatedUser && onLoginSuccess) {
+                    onLoginSuccess(authenticatedUser);
+                  }
+                  navigate("/", { replace: true });
+                }
+              }}
+              className="w-full py-3.5 bg-[#00bd6f] text-white font-bold rounded-xl text-base shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-transform"
+            >
+              Continue to App
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default LoginView;
-

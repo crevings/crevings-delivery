@@ -8,19 +8,27 @@ import { OrderDetailView } from './OrderDetailView';
 import { VoiceSearchModal } from '@/shared/components/VoiceSearchModal';
 import { OrderCard } from '@/features/dashboard/components/OrderCard';
 import { isTerminalStatus } from '@/lib/orderStatus';
-import { updateOrderStatus, mapDriverStatus } from '@/api/orders';
+import { updateOrderStatus, mapDriverStatus, useActiveOrders, mapActiveOrder } from '@/api/orders';
 import { useOrdersStore } from '@/app/store';
 
 // OrdersView is mounted directly by the router, so it sources its state from
-// the zustand orders store (same source as the Dashboard).
+// the zustand orders store and keeps it dynamically in sync with the backend.
 export const OrdersView: React.FC = () => {
   const orders = useOrdersStore(s => s.orders);
+  const setOrders = useOrdersStore(s => s.setOrders);
   const updateOrder = useOrdersStore(s => s.updateOrder);
   const selectedOrder = useOrdersStore(s => s.selectedOrder);
   const setSelectedOrder = useOrdersStore(s => s.setSelectedOrder);
   const [searchQuery, setSearchQuery] = useState('');
   
   const [showVoiceSearch, setShowVoiceSearch] = useState(false);
+
+  // Live dynamic sync with backend active orders
+  const { activeOrders, isError: activeOrdersError } = useActiveOrders();
+  React.useEffect(() => {
+    if (activeOrdersError || !activeOrders) return;
+    setOrders(activeOrders.map(mapActiveOrder));
+  }, [activeOrders, activeOrdersError, setOrders]);
 
   /**
    * Advance an order's status locally and sync it to the backend.
@@ -59,9 +67,12 @@ export const OrdersView: React.FC = () => {
   };
   
   const filteredOrders = orders.filter(o => {
-                      const matchesSearch = 
-      o.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      o.customer.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = 
+      (o.displayOrderNumber && o.displayOrderNumber.toLowerCase().includes(q)) ||
+      (o.displayOrderId && o.displayOrderId.toLowerCase().includes(q)) ||
+      o.id.toLowerCase().includes(q) || 
+      o.customer.toLowerCase().includes(q);
     
     if (!matchesSearch) return false;
 
@@ -69,23 +80,24 @@ export const OrdersView: React.FC = () => {
     return true;
   });
 
-  if (selectedOrder) {
-    return <OrderDetailView order={selectedOrder} onBack={() => setSelectedOrder(null)} onUpdateOrderStatus={onUpdateOrderStatus} />;
+  const currentSelectedOrder = selectedOrder ? (orders.find(o => o.id === selectedOrder.id) || selectedOrder) : null;
+  if (currentSelectedOrder) {
+    return <OrderDetailView order={currentSelectedOrder} onBack={() => setSelectedOrder(null)} onUpdateOrderStatus={onUpdateOrderStatus} />;
   }
 
   return (
-    <div className="pb-32 px-6 pt-6 animate-in fade-in duration-500 bg-[#FFFFFF] font-sans lg:bg-transparent lg:px-0 lg:pt-0 lg:pb-10">
+    <div className="pb-32 px-4 pt-4 animate-in fade-in duration-300 bg-[#FFFFFF] font-sans lg:bg-transparent lg:px-0 lg:pt-0 lg:pb-10 max-w-xl mx-auto">
       
-           <div className="relative mb-6">
-             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#6B7280]" size={20} />
-             <input 
-               type="text" 
-               placeholder="Search Delivery ID or Customer..." 
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-               className="w-full h-[52px] bg-[#FFFFFF] border border-[#E5E7EB] text-[#111827] py-4 pl-12 pr-4 rounded-[16px] focus:outline-none focus:border-[#1E90FF] text-[15px] font-medium transition-all"
-             />
-           </div>
+      <div className="relative mb-5">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <input 
+          type="text" 
+          placeholder="Search Order Number or Customer..." 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full h-12 bg-slate-50 border border-slate-200 text-slate-900 py-3 pl-11 pr-4 rounded-xl focus:outline-none focus:border-brand-500 focus:bg-white text-[14px] font-medium transition-all"
+        />
+      </div>
 
            <VoiceSearchModal 
              isOpen={showVoiceSearch} 

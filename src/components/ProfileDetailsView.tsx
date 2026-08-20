@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  ArrowLeft, User, Phone, Mail, Droplet, AlertTriangle, CreditCard, MessageCircle, 
-  Edit2, X, Calendar, Shield, UserPlus, CheckCircle2 
+  User, Phone, Mail, Droplet, AlertTriangle, CreditCard, MessageCircle, 
+  Edit2, X, Calendar, Shield, UserPlus, CheckCircle2, AlertCircle 
 } from 'lucide-react';
 import { usePartnerProfile, updatePartnerProfile, UpdateProfileData } from '@/api/profile';
 import { useAuthStore } from '@/app/store';
@@ -131,18 +131,21 @@ export const ProfileDetailsView: React.FC<ProfileDetailsViewProps> = ({ onBack }
 
   return (
     <div className="min-h-screen bg-white pb-24 font-sans animate-in fade-in duration-300">
-      <header className="sticky top-0 z-40 bg-white h-[60px] flex items-center px-4 mb-2 border-b border-slate-100">
-        <button onClick={handleBack} className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-700 active:scale-95 transition-transform">
-          <ArrowLeft size={24} />
-        </button>
-        <h1 className="text-[20px] font-bold text-slate-900 ml-2">Profile Details</h1>
-        <div className="ml-auto flex items-center gap-2">
+      {/* Top action bar — no duplicate page header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100">
+        <div>
+          <span className="text-[13px] font-bold text-slate-700 uppercase tracking-wide">
+            {isEditing ? "Edit Personal Details" : "Personal Information"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
           {!isEditing && (
             <button
               onClick={() => setIsEditing(true)}
-              className="w-10 h-10 bg-brand-50 hover:bg-brand-100 rounded-full flex items-center justify-center transition-colors active:scale-95"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#00bd6f]/10 hover:bg-[#00bd6f]/20 text-[#00bd6f] rounded-xl font-bold text-xs transition-colors active:scale-95 border border-[#00bd6f]/20"
             >
-              <Edit2 size={20} className="text-brand-700" />
+              <Edit2 size={14} />
+              <span>Edit</span>
             </button>
           )}
           {isEditing && (
@@ -150,21 +153,22 @@ export const ProfileDetailsView: React.FC<ProfileDetailsViewProps> = ({ onBack }
               <button
                 onClick={handleCancel}
                 disabled={isLoading}
-                className="w-10 h-10 bg-slate-50 hover:bg-slate-100 rounded-full flex items-center justify-center transition-colors active:scale-95 disabled:opacity-50"
+                className="w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center transition-colors active:scale-95 disabled:opacity-50 text-slate-600"
+                title="Cancel"
               >
-                <X size={20} className="text-slate-700" />
+                <X size={18} />
               </button>
               <button
                 onClick={handleSave}
                 disabled={isLoading}
-                className="px-4 h-10 bg-brand-600 hover:bg-brand-700 rounded-full flex items-center justify-center transition-colors active:scale-95 disabled:opacity-50 text-white font-semibold text-sm"
+                className="px-4 h-9 bg-[#00bd6f] hover:bg-[#00a862] rounded-xl flex items-center justify-center transition-colors active:scale-95 disabled:opacity-50 text-white font-bold text-xs shadow-md shadow-emerald-500/20"
               >
                 Save
               </button>
             </>
           )}
         </div>
-      </header>
+      </div>
 
       {(error || success) && (
         <div className="px-4 py-2">
@@ -369,5 +373,3 @@ export const ProfileDetailsView: React.FC<ProfileDetailsViewProps> = ({ onBack }
     </div>
   );
 };
-
-import { AlertCircle } from 'lucide-react';

@@ -43,10 +43,10 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  // Backend active-orders sync
-  const { activeOrders: backendActiveOrders, isError: activeOrdersError } = useActiveOrders();
+  // Backend active-orders sync with fast live polling
+  const { activeOrders: backendActiveOrders, isError: activeOrdersError, mutate: refreshActiveOrders } = useActiveOrders();
   useEffect(() => {
-    if (activeOrdersError) return;
+    if (activeOrdersError || !backendActiveOrders) return;
     setOrders(backendActiveOrders.map(mapActiveOrder));
   }, [backendActiveOrders, activeOrdersError, setOrders]);
 
@@ -58,7 +58,7 @@ export const Dashboard: React.FC = () => {
       setPendingOrder(availableOrder);
       setShowNewOrderAlert(true);
     }
-  }, [availableOrder?.id]);
+  }, [availableOrder?.id, availableOrder?.orderId]);
 
   useEffect(() => {
     if (!isOnline) {
@@ -93,12 +93,14 @@ export const Dashboard: React.FC = () => {
               restaurantName: payload.restaurantName || 'Restaurant',
               restaurantAddress: payload.restaurantAddress,
               restaurantPhone: payload.restaurantPhone,
-              pickupDistanceKm: payload.pickupDistanceKm ? String(payload.pickupDistanceKm) : undefined,
-              deliveryFee: payload.deliveryFee,
-              driverEarnings: payload.driverEarnings,
+              pickupDistanceKm: payload.pickupDistanceKm || (payload.distanceKm ? `${payload.distanceKm} km` : undefined),
+              deliveryFee: payload.deliveryFee !== undefined && payload.deliveryFee !== null ? Number(payload.deliveryFee) : 30,
+              driverEarnings: payload.driverEarnings !== undefined && payload.driverEarnings !== null ? Number(payload.driverEarnings) : (payload.deliveryFee ? Number(payload.deliveryFee) : 30),
             };
             setPendingOrder(formatted);
             setShowNewOrderAlert(true);
+            refreshAvailableOrders();
+            refreshActiveOrders();
           }
         } catch (err) {
           console.error('Failed to parse SSE dispatch payload:', err);
@@ -113,7 +115,7 @@ export const Dashboard: React.FC = () => {
         eventSource.close();
       }
     };
-  }, [isOnline]);
+  }, [isOnline, refreshAvailableOrders, refreshActiveOrders]);
 
   return (
     <div className="flex-1 flex flex-col bg-slate-50 min-h-full pb-20 overflow-y-auto w-full relative">
@@ -191,6 +193,7 @@ export const Dashboard: React.FC = () => {
             setPendingOrder(null);
             setShowNewOrderAlert(false);
             refreshAvailableOrders?.();
+            refreshActiveOrders?.();
             navigate(`/orders?orderId=${rawId}`);
           }}
           onReject={async () => {

@@ -16,6 +16,8 @@ export interface OrderItem {
 export interface Order {
   id: string;
   orderId?: string;
+  displayOrderNumber?: string;
+  displayOrderId?: string;
   customer: string;
   customerName?: string;
   type: 'Delivery' | 'Offline Orders' | 'Dine-in' | 'Table Booking' | 'Takeaway' | 'Customer Tips';

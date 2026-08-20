@@ -10,11 +10,9 @@ export const useActiveOrders = () => {
     fetcher,
     {
       revalidateOnMount: true,
-      // Keep the driver's active list fresh — the dashboard syncs this into
-      // the orders store so the list survives page refreshes (store is
-      // in-memory only). Mirrors the pre-refactor 20s active-order sync.
-      refreshInterval: 20000,
-      ...SWR_HOT,
+      // Keep the driver's active list fresh dynamically in real-time
+      refreshInterval: 3000,
+      ...SWR_LIVE,
     }
   );
 
@@ -59,6 +57,8 @@ export const mapDriverStatus = (status?: string): string => {
 export const mapActiveOrder = (raw: any): Order => ({
   id: raw.orderId,
   orderId: raw.orderId,
+  displayOrderNumber: raw.displayOrderNumber,
+  displayOrderId: raw.displayOrderId,
   customer: raw.customerDetails?.name || "Customer",
   type: "Delivery",
   channel: raw.channel || "Crevings",
@@ -131,6 +131,9 @@ export const useOrderHistory = (limit: number = 20, cursor?: string) => {
  */
 export const mapAvailableOrder = (raw: any): Order => ({
   id: raw.orderId,
+  orderId: raw.orderId,
+  displayOrderNumber: raw.displayOrderNumber,
+  displayOrderId: raw.displayOrderId,
   customer: raw.customerDetails?.name || "Customer",
   type: "Customer Tips",
   channel: "Direct",
@@ -140,12 +143,15 @@ export const mapAvailableOrder = (raw: any): Order => ({
     quantity: it.quantity,
     price: it.price,
   })),
-  paymentStatus: raw.payment?.status || "Paid",
-  address: raw.customerDetails?.address || "Civil Lines, Prayagraj",
+  paymentStatus: raw.payment?.status === "Paid" ? "Paid" : (raw.payment?.method === "COD" || raw.payment?.method === "Cash" ? "Unpaid" : (raw.payment?.status || "Paid")),
+  paymentMethod: raw.payment?.method || (raw.isCOD ? "COD" : "Online"),
+  address: raw.customerDetails?.address || "Customer Address",
   restaurantName: raw.restaurantName || raw.branchName || undefined,
   restaurantAddress: raw.restaurantAddress || "",
   restaurantPhone: raw.restaurantPhone || "",
   pickupDistanceKm: raw.pickupDistanceKm || undefined,
+  deliveryFee: Number(raw.deliveryFee ?? 30),
+  driverEarnings: Number(raw.deliveryFee ?? raw.driverEarnings ?? 30),
   subtotal: raw.subtotal || 0,
   tax: raw.tax || 0,
   discount: raw.discount || 0,
