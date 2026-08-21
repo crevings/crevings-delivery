@@ -17,15 +17,33 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, onClick, onUpdateSt
   
   const isRushOrder = timeRemaining < 0;
 
-  const btnText = order.status === 'Incoming' ? 'Accept Delivery' : 
-                  order.status === 'Accepted' || order.status === 'Preparing' ? 'Navigate to Outlet' : 
-                  order.status === 'Ready' ? 'Deliver to Customer' : 
-                  (order.status === 'Completed' || order.status === 'Delivered') ? 'Delivery Complete' : 'Complete Delivery';
-                  
-  const btnBg = order.status === 'Incoming' ? 'bg-[#22C55E]' : 
-                order.status === 'Ready' ? 'bg-[#6366F1]' : 
-                (order.status === 'Completed' || order.status === 'Delivered') ? 'bg-slate-200 text-slate-500 cursor-default' :
-                'bg-[#1E90FF]';
+  const s = (order.status || '').toUpperCase();
+  const isIncoming = s === 'INCOMING';
+  const isCompleted = s === 'COMPLETED' || s === 'DELIVERED';
+  const isPickedUp = s === 'OUT FOR DELIVERY' || s === 'OUT_FOR_DELIVERY' || s === 'PICKED UP' || s === 'REACHED_CUSTOMER' || s === 'REACHED CUSTOMER' || s === 'ARRIVED DESTINATION';
+  const isArrivedAtRestaurant = s === 'DRIVER_ARRIVED' || s === 'DRIVER ARRIVED' || s === 'ARRIVED' || s === 'ARRIVED AT RESTAURANT';
+
+  let btnText = 'Navigate to Outlet';
+  let btnBg = 'bg-[#1E90FF]';
+
+  if (isIncoming) {
+    btnText = 'Accept Delivery';
+    btnBg = 'bg-[#22C55E]';
+  } else if (isCompleted) {
+    btnText = 'Delivery Complete';
+    btnBg = 'bg-slate-200 text-slate-500 cursor-default';
+  } else if (isPickedUp) {
+    // Only after driver arrived at restaurant AND entered the restaurant OTP
+    btnText = 'Deliver to Customer';
+    btnBg = 'bg-[#6366F1]';
+  } else if (isArrivedAtRestaurant) {
+    btnText = 'Enter Restaurant OTP';
+    btnBg = 'bg-[#F59E0B]';
+  } else {
+    // Accepted / Preparing / Ready (before driver arrived & entered OTP)
+    btnText = 'Navigate to Outlet';
+    btnBg = 'bg-[#1E90FF]';
+  }
 
   const displayNum = order.displayOrderNumber || order.displayOrderId || (order.id && order.id.length > 12 ? order.id.slice(-8).toUpperCase() : order.id);
 
@@ -109,18 +127,26 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, onClick, onUpdateSt
         <button 
           onClick={(e) => {
             e.stopPropagation();
-            if (order.status === 'Accepted' || order.status === 'Preparing') {
-              openMapsNavigation(order.restaurantAddress, order.restaurantName);
-            } else if (order.status === 'Ready') {
-              openMapsNavigation(order.address, order.customer);
-            } else if (order.status !== 'Completed' && order.status !== 'Delivered') {
+            if (isIncoming) {
               onUpdateStatus?.(e);
+            } else if (isCompleted) {
+              // no-op
+            } else if (isPickedUp) {
+              // Food picked up & OTP entered -> Deliver to Customer
+              openMapsNavigation(order.address, order.customer);
+            } else if (isArrivedAtRestaurant) {
+              // Arrived at restaurant -> open order details to enter restaurant OTP
+              onClick();
+            } else {
+              // Heading to restaurant -> navigate to outlet
+              openMapsNavigation(order.restaurantAddress, order.restaurantName);
             }
           }}
-          className={`w-full h-[50px] rounded-[14px] font-bold text-[15px] tracking-wide flex items-center justify-center gap-2 transition-colors ${btnBg} ${order.status !== 'Completed' && order.status !== 'Delivered' ? 'text-white active:bg-opacity-90' : ''}`}
+          className={`w-full h-[50px] rounded-[14px] font-bold text-[15px] tracking-wide flex items-center justify-center gap-2 transition-colors ${btnBg} ${!isCompleted ? 'text-white active:bg-opacity-90' : ''}`}
         >
-          {order.status === 'Accepted' || order.status === 'Preparing' || order.status === 'Ready' ? <Navigation size={18} className="" /> : null}
-          {order.status === 'Incoming' ? <ChevronsRight size={18} className="" /> : null}
+          {(!isIncoming && !isCompleted && !isArrivedAtRestaurant) || isPickedUp ? <Navigation size={18} className="" /> : null}
+          {isIncoming ? <ChevronsRight size={18} className="" /> : null}
+          {isArrivedAtRestaurant ? <Package size={18} className="" /> : null}
           {btnText}
         </button>
       </div>

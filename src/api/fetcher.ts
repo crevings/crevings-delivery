@@ -8,6 +8,7 @@
  * - Optional external `signal` for effect cleanup (race-safe requests).
  * - Typed helpers: get / post / patch / del.
  * - Consistent ResponseError that preserves the backend's error message.
+ * - Automatic token refresh on 401 (single retry, then fail).
  */
 
 export const BASE_URL =
@@ -51,8 +52,6 @@ const getSessionToken = (): string | null => {
 /**
  * Fired once when any authenticated request comes back 401, so the app can
  * drop the session and redirect to /login (AuthProvider listens for it).
- * Auth is dual-mode (cookie and/or Bearer token), so a 401 can also arrive
- * with a valid-looking local token — treat it as a global session expiry.
  */
 export const UNAUTHORIZED_EVENT = "delivery:unauthorized";
 
@@ -65,6 +64,36 @@ const notifyUnauthorized = () => {
     // non-fatal
   }
 };
+
+// ─── Token refresh ──────────────────────────────────────────────────────────
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (res.ok) {
+      // Persist new token if backend returns one in response body
+      try {
+        const data = await res.json();
+        if (data.token) {
+          sessionStorage.setItem("delivery_auth_token", data.token);
+        }
+      } catch {}
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Core request ───────────────────────────────────────────────────────────
 
 export async function request<T = unknown>(
   path: string,
@@ -81,8 +110,8 @@ export async function request<T = unknown>(
 
   const token = getSessionToken();
 
-  try {
-    const res = await fetch(isRelative ? `${BASE_URL}${path}` : path, {
+  const doFetch = async (resignal?: AbortSignal) => {
+    return fetch(isRelative ? `${BASE_URL}${path}` : path, {
       ...rest,
       method: method || "GET",
       credentials: isRelative ? "include" : "omit",
@@ -94,13 +123,46 @@ export async function request<T = unknown>(
           }
         : (headers || {}),
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: combinedSignal,
+      signal: resignal || combinedSignal,
     });
+  };
+
+  try {
+    const res = await doFetch();
+
+    // Auto-refresh on 401
+    if (res.status === 401 && isRelative) {
+      if (!refreshInFlight) {
+        refreshInFlight = refreshAccessToken();
+      }
+      const refreshed = await refreshInFlight;
+      refreshInFlight = null;
+
+      if (refreshed) {
+        const retryRes = await doFetch();
+        if (!retryRes.ok) {
+          // Refresh succeeded but retry still failed — session is truly dead
+          if (retryRes.status === 401 && getSessionToken() !== null) {
+            notifyUnauthorized();
+          }
+          let info: unknown = null;
+          try { info = await retryRes.json(); } catch { info = { message: retryRes.statusText }; }
+          const message = info && typeof info === "object" && "message" in info
+            ? String((info as any).message) : "An error occurred.";
+          throw new ResponseError(message, retryRes, info);
+        }
+        if (retryRes.status === 204) return undefined as T;
+        const retryText = await retryRes.text();
+        return (retryText ? JSON.parse(retryText) : undefined) as T;
+      }
+
+      // Refresh failed — notify and throw
+      if (getSessionToken() !== null) {
+        notifyUnauthorized();
+      }
+    }
 
     if (!res.ok) {
-      // Global session-expiry hook: only fire when the request was
-      // authenticated (token or cookie present) to avoid spurious logouts
-      // from anonymous endpoints (e.g. /zones/check).
       if (res.status === 401 && isRelative && getSessionToken() !== null) {
         notifyUnauthorized();
       }

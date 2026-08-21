@@ -92,11 +92,13 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       case 'READY_FOR_PICKUP':
       case 'DRIVER_ASSIGNED': return 0;
       case 'ARRIVED':
-      case 'DRIVER_ARRIVED': return 1;
+      case 'DRIVER_ARRIVED': 
+      case 'DRIVER ARRIVED': return 1;
       case 'OUT FOR DELIVERY':
       case 'OUT_FOR_DELIVERY':
       case 'PICKED UP': return 2;
       case 'REACHED_CUSTOMER':
+      case 'REACHED CUSTOMER':
       case 'ARRIVED DESTINATION': return 3;
       case 'COMPLETED':
       case 'DELIVERED': return 4;
@@ -105,13 +107,6 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   };
   
   const currentStatusIndex = getStatusIndex();
-
-  const isRestaurantReady = 
-    (order.status || '').toUpperCase() === 'READY' || 
-    (order.status || '').toUpperCase() === 'READY_FOR_PICKUP' || 
-    (order.status || '').toUpperCase() === 'OUT FOR DELIVERY' || 
-    (order.status || '').toUpperCase() === 'OUT_FOR_DELIVERY' || 
-    (order.status || '').toUpperCase() === 'COMPLETED';
 
   const getButtonText = () => {
     const s = (currentStatus || '').toUpperCase();
@@ -123,11 +118,13 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       case 'DRIVER_ASSIGNED': return 'Arrived at Restaurant';
       case 'ARRIVED':
       case 'DRIVER_ARRIVED': 
-        return isRestaurantReady ? 'Order Picked Up' : 'Waiting for Food Preparation';
+      case 'DRIVER ARRIVED':
+        return 'Order Picked Up (Enter OTP)';
       case 'OUT FOR DELIVERY':
       case 'OUT_FOR_DELIVERY':
       case 'PICKED UP': return 'Arrived at Customer Location';
       case 'REACHED_CUSTOMER':
+      case 'REACHED CUSTOMER':
       case 'ARRIVED DESTINATION': return 'Order Delivered';
       case 'COMPLETED':
       case 'DELIVERED': return 'Order Delivered';
@@ -146,24 +143,13 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       setCurrentStatus('DRIVER_ARRIVED');
       onUpdateOrderStatus?.(order.id, 'DRIVER_ARRIVED');
       
-      // If the food is already marked ready by the restaurant, immediately offer OTP
-      if (isRestaurantReady) {
-        setOtpValue(['', '', '', '', '', '']);
-        setShowPickupOtpSheet(true);
-      }
+      // Immediately open the OTP sheet so driver can verify pickup from restaurant
+      setOtpValue(['', '', '', '', '', '']);
+      setShowPickupOtpSheet(true);
       return;
     }
 
-    if (btnText === 'Waiting for Food Preparation') {
-      alert('Food is still being prepared by the restaurant. You can collect the order and enter the Pickup PIN once the restaurant marks it as Ready.');
-      return;
-    }
-
-    if (btnText === 'Order Picked Up') {
-      if (!isRestaurantReady) {
-        alert('Food is still being prepared by the restaurant. Please wait until the restaurant marks it as Ready.');
-        return;
-      }
+    if (btnText === 'Order Picked Up (Enter OTP)') {
       setOtpValue(['', '', '', '', '', '']);
       setShowPickupOtpSheet(true);
       return;
@@ -542,19 +528,13 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </button>
             </div>
             <p className="text-slate-500 mb-4 text-[15px]">Ask restaurant for the 6-digit PIN to confirm pickup.</p>
-            {!isRestaurantReady && (
-              <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl mb-4 text-[13px] font-medium leading-relaxed">
-                ⏳ Food is currently being prepared by the restaurant. You can only verify the Pickup PIN once the restaurant marks this order as <strong>Ready</strong>.
-              </div>
-            )}
             <div className="flex gap-2 justify-between mb-8">
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <input 
                   key={index}
                   type="text"
                   maxLength={1}
-                  disabled={!isRestaurantReady}
-                  className={`w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none ${!isRestaurantReady ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                   value={otpValue[index]}
                   onChange={(e) => {
                     const newOtp = [...otpValue];
@@ -566,10 +546,10 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             </div>
             <button 
               onClick={handlePickupOtpVerify}
-              disabled={isVerifying || !isRestaurantReady}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled={isVerifying}
+              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
             >
-              {!isRestaurantReady ? 'Waiting for Order to be Ready' : 'Verify OTP'}
+              {isVerifying ? 'Verifying PIN...' : 'Verify OTP'}
             </button>
           </div>
         </div>

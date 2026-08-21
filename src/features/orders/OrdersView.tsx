@@ -1,5 +1,6 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   Package,
   Search
@@ -14,6 +15,10 @@ import { useOrdersStore } from '@/app/store';
 // OrdersView is mounted directly by the router, so it sources its state from
 // the zustand orders store and keeps it dynamically in sync with the backend.
 export const OrdersView: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const orderIdParam = searchParams.get('orderId');
+
   const orders = useOrdersStore(s => s.orders);
   const setOrders = useOrdersStore(s => s.setOrders);
   const updateOrder = useOrdersStore(s => s.updateOrder);
@@ -23,9 +28,19 @@ export const OrdersView: React.FC = () => {
   
   const [showVoiceSearch, setShowVoiceSearch] = useState(false);
 
+  // Auto-select order if orderId query param is present
+  useEffect(() => {
+    if (orderIdParam && orders.length > 0) {
+      const match = orders.find(o => o.id === orderIdParam || (o as any).orderId === orderIdParam);
+      if (match) {
+        setSelectedOrder(match);
+      }
+    }
+  }, [orderIdParam, orders, setSelectedOrder]);
+
   // Live dynamic sync with backend active orders
   const { activeOrders, isError: activeOrdersError } = useActiveOrders();
-  React.useEffect(() => {
+  useEffect(() => {
     if (activeOrdersError || !activeOrders) return;
     setOrders(activeOrders.map(mapActiveOrder));
   }, [activeOrders, activeOrdersError, setOrders]);
@@ -82,49 +97,58 @@ export const OrdersView: React.FC = () => {
 
   const currentSelectedOrder = selectedOrder ? (orders.find(o => o.id === selectedOrder.id) || selectedOrder) : null;
   if (currentSelectedOrder) {
-    return <OrderDetailView order={currentSelectedOrder} onBack={() => setSelectedOrder(null)} onUpdateOrderStatus={onUpdateOrderStatus} />;
+    return (
+      <OrderDetailView 
+        order={currentSelectedOrder} 
+        onBack={() => {
+          setSelectedOrder(null);
+          navigate('/orders', { replace: true });
+        }} 
+        onUpdateOrderStatus={onUpdateOrderStatus} 
+      />
+    );
   }
 
   return (
-    <div className="pb-32 px-4 pt-4 animate-in fade-in duration-300 bg-[#FFFFFF] font-sans lg:bg-transparent lg:px-0 lg:pt-0 lg:pb-10 max-w-xl mx-auto">
+    <div className="pb-32 px-4 pt-4 animate-in fade-in duration-300 bg-slate-50 font-sans min-h-screen lg:bg-transparent lg:px-0 lg:pt-0 lg:pb-10 max-w-xl mx-auto w-full space-y-4">
       
-      <div className="relative mb-5">
+      <div className="relative">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
         <input 
           type="text" 
           placeholder="Search Order Number or Customer..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full h-12 bg-slate-50 border border-slate-200 text-slate-900 py-3 pl-11 pr-4 rounded-xl focus:outline-none focus:border-brand-500 focus:bg-white text-[14px] font-medium transition-all"
+          className="w-full h-12 bg-white border border-slate-200 text-slate-900 py-3 pl-11 pr-4 rounded-2xl focus:outline-none focus:border-blue-500 text-[14px] font-medium transition-all shadow-xs"
         />
       </div>
 
-           <VoiceSearchModal 
-             isOpen={showVoiceSearch} 
-             onClose={() => setShowVoiceSearch(false)} 
-             onResult={(text) => setSearchQuery(text)}
-           />
+      <VoiceSearchModal 
+        isOpen={showVoiceSearch} 
+        onClose={() => setShowVoiceSearch(false)} 
+        onResult={(text) => setSearchQuery(text)}
+      />
 
-            <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4">
-                 {filteredOrders.length > 0 ? (
-                   filteredOrders.map((order) => (
-                     <OrderCard 
-                       key={order.id}
-                       order={order}
-                       onClick={() => setSelectedOrder(order)}
-                       onUpdateStatus={(e) => { e.stopPropagation(); onUpdateOrderStatus(order.id); }}
-                     />
-                   ))
-                 ) : (
-                   <div className="py-20 text-center bg-[#FFFFFF] rounded-[32px] border border-slate-100 border-dashed col-span-2">
-                     <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-200">
-                         <Package size={24} />
-                     </div>
-                     <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">No matching deliveries</p>
-                     <p className="text-[10px] font-medium text-slate-300 mt-1">Try adjusting your filters or search query</p>
-                   </div>
-                 )}
+      <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4">
+        {filteredOrders.length > 0 ? (
+          filteredOrders.map((order) => (
+            <OrderCard 
+              key={order.id}
+              order={order}
+              onClick={() => setSelectedOrder(order)}
+              onUpdateStatus={(e) => { e.stopPropagation(); onUpdateOrderStatus(order.id); }}
+            />
+          ))
+        ) : (
+          <div className="py-16 px-4 text-center bg-white rounded-2xl border border-slate-200 shadow-xs col-span-2">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+              <Package size={26} />
             </div>
+            <h3 className="text-sm font-bold text-slate-800">No active deliveries</h3>
+            <p className="text-xs text-slate-400 mt-1">Orders will appear here as soon as they are assigned to you.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

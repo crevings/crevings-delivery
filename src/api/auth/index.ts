@@ -64,9 +64,10 @@ export const login = async (payload: unknown) => {
 
 export const logout = async () => {
   try {
-    return await post("/delivery/auth/logout");
+    await post("/delivery/auth/logout");
   } catch {
-    // Backend may already have dropped the session — logout is best-effort.
-    return { success: true };
+    // Best-effort
   }
+  await post("/auth/logout").catch(() => {});
+  return { success: true };
 };

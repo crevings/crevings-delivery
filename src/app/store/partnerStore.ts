@@ -4,6 +4,7 @@ interface PartnerState {
   isOnline: boolean;
   isPaused: boolean;
   rushHour: boolean;
+  floatingCash: number;
   selectedBranch: any;
   outletServices: any;
   gigStartTime: Date | null;
@@ -11,6 +12,7 @@ interface PartnerState {
   setIsOnline: (v: boolean) => void;
   setIsPaused: (v: boolean) => void;
   setRushHour: (v: boolean) => void;
+  setFloatingCash: (v: number) => void;
   setSelectedBranch: (branch: any) => void;
   setOutletServices: (services: any) => void;
   setGigStartTime: (time: Date | null) => void;
@@ -21,6 +23,7 @@ export const usePartnerStore = create<PartnerState>((set) => ({
   isOnline: false,
   isPaused: false,
   rushHour: false,
+  floatingCash: 0,
   selectedBranch: null,
   outletServices: null,
   gigStartTime: null,
@@ -28,6 +31,7 @@ export const usePartnerStore = create<PartnerState>((set) => ({
   setIsOnline: (v) => set({ isOnline: v }),
   setIsPaused: (v) => set({ isPaused: v }),
   setRushHour: (v) => set({ rushHour: v }),
+  setFloatingCash: (v) => set({ floatingCash: v }),
   setSelectedBranch: (branch) => set({ selectedBranch: branch }),
   setOutletServices: (services) => set({ outletServices: services }),
   setGigStartTime: (time) => set({ gigStartTime: time }),

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Package 
+  Package,
+  AlertTriangle,
+  Phone,
+  Banknote
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { NewOrderAlert } from './components/NewOrderAlert';
@@ -9,9 +12,10 @@ import { Order } from '@/types';
 import { isTerminalStatus } from '@/lib/orderStatus';
 
 import { acceptOrder, mapActiveOrder, respondToDispatch, useActiveOrders, useAvailableOrders } from '@/api/orders';
-import { toggleOnline } from '@/api/partner';
+import { toggleOnline, getPartnerProfile } from '@/api/partner';
 import { BASE_URL } from '@/api/fetcher';
 import { useOrdersStore, usePartnerStore } from '@/app/store';
+import { createSSEClient } from '@/lib/sse-client';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -20,9 +24,39 @@ export const Dashboard: React.FC = () => {
   const addOrder = useOrdersStore(s => s.addOrder);
   const isOnline = usePartnerStore(s => s.isOnline);
   const setIsOnline = usePartnerStore(s => s.setIsOnline);
+  const floatingCash = usePartnerStore(s => s.floatingCash);
+  const setFloatingCash = usePartnerStore(s => s.setFloatingCash);
 
   const [showNewOrderAlert, setShowNewOrderAlert] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+
+  // Sync floating cash from partner profile on mount and periodically
+  useEffect(() => {
+    let active = true;
+    const fetchProfile = async () => {
+      try {
+        const res: any = await getPartnerProfile();
+        if (active && res?.profile) {
+          if (res.profile.floatingCash !== undefined) {
+            setFloatingCash(Number(res.profile.floatingCash) || 0);
+          }
+          if (res.profile.isOnline !== undefined) {
+            setIsOnline(Boolean(res.profile.isOnline));
+          }
+        }
+      } catch (err) {
+        // non-fatal
+      }
+    };
+    fetchProfile();
+    const interval = setInterval(fetchProfile, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [setFloatingCash, setIsOnline]);
+
+  const isFloatingCashBlocked = floatingCash >= 2000;
 
   // Active orders filtered
   const activeOrders = orders.filter(o => !isTerminalStatus(o.status));
@@ -50,34 +84,32 @@ export const Dashboard: React.FC = () => {
     setOrders(backendActiveOrders.map(mapActiveOrder));
   }, [backendActiveOrders, activeOrdersError, setOrders]);
 
-  // SWR available orders polling when online
-  const { availableOrder, mutate: refreshAvailableOrders } = useAvailableOrders(isOnline);
+  // SWR available orders polling when online and not blocked by floating cash
+  const { availableOrder, mutate: refreshAvailableOrders } = useAvailableOrders(isOnline && !isFloatingCashBlocked);
 
   useEffect(() => {
-    if (availableOrder) {
+    if (availableOrder && !isFloatingCashBlocked) {
       setPendingOrder(availableOrder);
       setShowNewOrderAlert(true);
     }
-  }, [availableOrder?.id, availableOrder?.orderId]);
+  }, [availableOrder?.id, availableOrder?.orderId, isFloatingCashBlocked]);
 
   useEffect(() => {
-    if (!isOnline) {
+    if (!isOnline || isFloatingCashBlocked) {
       setShowNewOrderAlert(false);
       setPendingOrder(null);
     }
-  }, [isOnline]);
+  }, [isOnline, isFloatingCashBlocked]);
 
   // Connect to SSE stream for real-time dispatch events
   useEffect(() => {
-    if (!isOnline) return;
+    if (!isOnline || isFloatingCashBlocked) return;
 
-    let eventSource: EventSource | null = null;
-    try {
-      eventSource = new EventSource(`${BASE_URL}/delivery/stream`, { withCredentials: true });
-
-      eventSource.addEventListener('dispatch', (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data);
+    const sseClient = createSSEClient({
+      url: `${BASE_URL}/delivery/stream`,
+      events: {
+        dispatch: (payload: any) => {
+          if (isFloatingCashBlocked) return;
           if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
             const formatted: Order = {
               id: payload.orderId,
@@ -102,27 +134,57 @@ export const Dashboard: React.FC = () => {
             refreshAvailableOrders();
             refreshActiveOrders();
           }
-        } catch (err) {
-          console.error('Failed to parse SSE dispatch payload:', err);
-        }
-      });
-    } catch (err) {
-      console.error('Failed to connect to SSE delivery stream:', err);
-    }
+        },
+      },
+    });
+
+    sseClient.connect();
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
+      sseClient.close();
     };
-  }, [isOnline, refreshAvailableOrders, refreshActiveOrders]);
+  }, [isOnline, isFloatingCashBlocked, refreshAvailableOrders, refreshActiveOrders]);
 
   return (
     <div className="flex-1 flex flex-col bg-slate-50 min-h-full pb-20 overflow-y-auto w-full relative">
-      <div className="px-4 pt-4 space-y-6 max-w-lg mx-auto w-full">
+      <div className="px-4 pt-4 space-y-4 max-w-lg mx-auto w-full">
         
+        {/* Floating Cash Limit Reached Banner */}
+        {isFloatingCashBlocked && (
+          <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 shadow-sm animate-in fade-in duration-300">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                <AlertTriangle size={22} className="text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <h3 className="font-bold text-amber-950 text-base">Floating Cash Limit Reached</h3>
+                  <span className="bg-amber-200/90 text-amber-900 text-xs font-bold px-2 py-0.5 rounded-full">
+                    ₹{floatingCash.toLocaleString('en-IN')} (Limit: ₹2,000)
+                  </span>
+                </div>
+                <p className="text-sm text-amber-900/85 mt-1 leading-relaxed">
+                  You have collected ₹{floatingCash.toLocaleString('en-IN')} in customer cash. New orders are paused until floating cash is submitted.
+                </p>
+                <div className="mt-3 pt-3 border-t border-amber-200/70 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-amber-900">
+                    Contact for cash submission:
+                  </span>
+                  <a
+                    href="tel:+919369797768"
+                    className="inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm px-4 py-2 rounded-xl transition-all shadow-sm active:scale-95"
+                  >
+                    <Phone size={15} />
+                    +91 9369797768
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Searching Status Radar Card */}
-        {isOnline && (
+        {isOnline && !isFloatingCashBlocked && (
           <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
             <div className="relative w-10 h-10 flex shrink-0 items-center justify-center">
               <div className="absolute inset-0 bg-blue-200 rounded-full animate-ping opacity-75"></div>

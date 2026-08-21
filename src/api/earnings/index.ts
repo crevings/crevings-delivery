@@ -5,20 +5,28 @@ import { SWR_HOT } from "../swrConfig";
 export interface EarningsPeriod {
   earnings: number;
   trips: number;
+  ordersEarning?: number;
+  tips?: number;
+  incentive?: number;
+  bonus?: number;
 }
 
 export interface EarningsSummary {
   today: EarningsPeriod;
+  last3Days?: EarningsPeriod;
+  last7Days?: EarningsPeriod;
+  last14Days?: EarningsPeriod;
   week: EarningsPeriod;
   month: EarningsPeriod;
+  lastMonth?: EarningsPeriod;
   allTime: EarningsPeriod;
   balance: number;
 }
 
 /**
- * Driver earnings summary — `GET /delivery/wallet/earnings` (implemented in
- * the backend: today / week / month / all-time earnings + trip counts from
- * the driver's wallet ledger, plus the current balance).
+ * Driver earnings summary — `GET /delivery/wallet/earnings` (today, last 3/7/14 days,
+ * week, month, last month, all-time earnings + trip counts from the driver's wallet ledger,
+ * plus current balance).
  */
 export const useEarningsSummary = () => {
   const { data, error, isLoading, mutate } = useSWR<EarningsSummary>(
