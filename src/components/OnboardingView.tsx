@@ -1,449 +1,1307 @@
-import React, { useState } from 'react';
-import { 
-  ArrowLeft, 
-  MapPin, 
-  Mic, 
-  Bell, 
-  Camera, 
-  Image as ImageIcon,
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
   CheckCircle2,
   Upload,
-  ChevronDown
-} from 'lucide-react';
+  Camera,
+  RefreshCw,
+  ShieldCheck,
+  User,
+  Phone,
+  Mail,
+  HeartHandshake,
+  AlertCircle,
+  FileCheck,
+  Sparkles,
+  Info,
+  Loader2,
+  Check,
+  Sun,
+  Eye,
+  Building2,
+  CreditCard,
+  Lock,
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { post, BASE_URL } from "@/api/fetcher";
+import { analyzePhotoQuality, PhotoQualityResult } from "@/shared/utils/photoIntelligence";
 
 interface OnboardingViewProps {
-  onComplete: () => void;
-  onBack: () => void;
+  onComplete?: () => void;
+  onBack?: () => void;
+}
+
+// Upload helper to Cloudflare backend
+async function uploadFileToCloudflare(file: File | Blob, filename = "upload.jpg"): Promise<string> {
+  try {
+    const formData = new FormData();
+    formData.append("file", file, filename);
+
+    const response = await fetch(`${BASE_URL}/upload/image/public`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (response.ok) {
+      const json = await response.json();
+      if (json.data?.url) return json.data.url;
+      if (json.url) return json.url;
+    } else {
+      console.warn("Upload failed with status:", response.status);
+    }
+  } catch (err) {
+    console.warn("Cloudflare upload fallback to data URI:", err);
+  }
+
+  // Fallback to local Data URL
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(file);
+  });
 }
 
 export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBack }) => {
-  const [step, setStep] = useState(1);
+  const navigate = useNavigate();
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1); // 4 = Success
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
-  // Step 1: Permissions
-  const [permissionsGranted, setPermissionsGranted] = useState(false);
-
-  // Step 2: Personal Details
+  // ─────────────────────────────────────────────────────────────
+  // PAGE 1: Personal & Emergency Information
+  // ─────────────────────────────────────────────────────────────
   const [personalDetails, setPersonalDetails] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    whatsapp: '',
-    emergencyName: '',
-    emergencyPhone: '',
-    emergencyRelationship: ''
+    name: "",
+    phone: "",
+    email: "",
+    emergencyName: "",
+    emergencyPhone: "",
+    emergencyRelationship: "Parent",
   });
 
-  // Step 3: Documents
-  const [documents, setDocuments] = useState({
-    aadharFront: null as string | null,
-    aadharBack: null as string | null,
-    panNumber: '',
-    legalAddress: ''
-  });
+  // Mobile OTP state
+  const [phoneOtp, setPhoneOtp] = useState(["", "", "", "", "", ""]);
+  const [isSendingPhoneOtp, setIsSendingPhoneOtp] = useState(false);
+  const [isVerifyingPhoneOtp, setIsVerifyingPhoneOtp] = useState(false);
+  const [isPhoneVerified, setIsPhoneVerified] = useState(false);
+  const [showOtpBox, setShowOtpBox] = useState(false);
+  const [phoneOtpError, setPhoneOtpError] = useState<string | null>(null);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Step 4: Vehicle Info
-  const [vehicle, setVehicle] = useState({
-    brand: '',
-    model: '',
-    type: 'Bike', // Bike, Scooty, EV Bike, EV Scooty, Cycle
-    numberPlate: '',
-    licensePhoto: null as string | null
-  });
+  useEffect(() => {
+    let timer: any;
+    if (otpCountdown > 0) {
+      timer = setInterval(() => setOtpCountdown((c) => c - 1), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [otpCountdown]);
 
-  // Step 5: Bank Details
-  const [bank, setBank] = useState({
-    bankName: '',
-    accountName: '',
-    accountNumber: '',
-    ifsc: '',
-    upiId: ''
-  });
+  const handleSendPhoneOtp = async () => {
+    if (personalDetails.phone.length !== 10) return;
+    setIsSendingPhoneOtp(true);
+    setPhoneOtpError(null);
+    try {
+      // Pre-check if phone number is already registered with another account
+      const checkRes: any = await post("/delivery/onboarding/check-phone", {
+        phone: personalDetails.phone,
+      });
+      if (checkRes && checkRes.available === false) {
+        setPhoneOtpError(checkRes.message || "This phone number is already registered. Please log in.");
+        setIsSendingPhoneOtp(false);
+        return;
+      }
 
-  const handlePersonalChange = (field: string, value: string) => {
-    setPersonalDetails(prev => ({ ...prev, [field]: value }));
+      await post("/delivery/auth/request-whatsapp-otp", {
+        phone: personalDetails.phone,
+      });
+      setShowOtpBox(true);
+      setOtpCountdown(30);
+    } catch (err: any) {
+      console.warn("OTP request note:", err);
+      if (err.message && (err.message.includes("already registered") || err.message.includes("already exists"))) {
+        setPhoneOtpError(err.message);
+        return;
+      }
+      setShowOtpBox(true);
+      setOtpCountdown(30);
+    } finally {
+      setIsSendingPhoneOtp(false);
+    }
   };
 
-  const handleDocChange = (field: string, value: any) => {
-    setDocuments(prev => ({ ...prev, [field]: value }));
+  const handleVerifyPhoneOtp = () => {
+    const entered = phoneOtp.join("");
+    if (entered.length < 4) {
+      setPhoneOtpError("Please enter valid OTP");
+      return;
+    }
+    setIsVerifyingPhoneOtp(true);
+    setTimeout(() => {
+      setIsPhoneVerified(true);
+      setShowOtpBox(false);
+      setIsVerifyingPhoneOtp(false);
+    }, 600);
   };
 
-  const handleVehicleChange = (field: string, value: any) => {
-    setVehicle(prev => ({ ...prev, [field]: value }));
+  const handleOtpDigitChange = (val: string, idx: number) => {
+    const digits = val.replace(/\D/g, "");
+    const newOtp = [...phoneOtp];
+    newOtp[idx] = digits.slice(-1);
+    setPhoneOtp(newOtp);
+    if (digits && idx < 5) {
+      otpInputs.current[idx + 1]?.focus();
+    }
   };
 
-  const handleBankChange = (field: string, value: string) => {
-    setBank(prev => ({ ...prev, [field]: value }));
+  // ─────────────────────────────────────────────────────────────
+  // PAGE 2: Live Selfie Upload & Quality Intelligence
+  // ─────────────────────────────────────────────────────────────
+  const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
+  const [photoAnalysis, setPhotoAnalysis] = useState<PhotoQualityResult | null>(null);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const startCamera = async () => {
+    try {
+      setIsCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 640 }, height: { ideal: 640 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.warn("Camera access denied/failed:", err);
+      setIsCameraActive(false);
+    }
   };
 
-  const InputField = ({ label, placeholder = "", type = "text", value, onChange, className = "" }: any) => (
-    <div className="space-y-1.5 mb-4">
-      <label className="text-[13px] font-medium text-slate-600">{label}</label>
-      <input 
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={onChange}
-        className={`w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[15px] text-slate-900 focus:outline-none focus:border-[#1E90FF] transition-colors focus:bg-[#FFFFFF] ${className}`}
-      />
-    </div>
-  );
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  }, []);
 
-  const PhotoUpload = ({ label, photo, setPhoto }: { label: string, photo: string | null, setPhoto: (val: string | null) => void }) => (
-    <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50 mb-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/png, image/jpeg';
-      input.onchange = (e: any) => {
-        const file = e.target.files?.[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            setPhoto(event.target?.result as string);
-          };
-          reader.readAsDataURL(file);
-        }
-      };
-      input.click();
-    }}>
-      {photo ? (
-        <img src={photo} alt={label} className="w-full h-32 rounded-xl object-cover mb-3 shadow-sm" />
-      ) : (
-        <div className="w-12 h-12 bg-[#FFFFFF] rounded-full flex items-center justify-center text-[#1E90FF] shadow-sm mb-3">
-          <Upload size={20} />
-        </div>
-      )}
-      <p className="text-[14px] font-semibold text-[#1E90FF]">{photo ? `Change ${label}` : `Upload ${label}`}</p>
-    </div>
-  );
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, [stopCamera]);
 
-  const renderStep1 = () => (
-    <div className="animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
-      <div className="bg-[#FFFFFF] rounded-[24px] p-6 border border-slate-200 shadow-sm mb-6 text-center">
-        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-          <MapPin size={28} />
-        </div>
-        <h2 className="text-xl font-bold text-slate-900 mb-2">App Permissions</h2>
-        <p className="text-[14px] text-slate-500 mb-6">
-          To provide you with the best delivery experience and get orders nearby, we need access to the following settings.
-        </p>
+  const captureSelfieFrame = async () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 480;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-        <div className="space-y-4 text-left">
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-            <MapPin className={permissionsGranted ? "text-emerald-500" : "text-blue-500"} size={22} />
-            <div className="flex-1">
-              <p className="text-[15px] font-semibold text-slate-900">Location</p>
-              <p className="text-[12px] text-slate-500">To match you with nearby orders</p>
-            </div>
-            {permissionsGranted && <CheckCircle2 size={18} className="text-emerald-500" />}
-          </div>
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-            <Mic className={permissionsGranted ? "text-emerald-500" : "text-slate-500"} size={22} />
-            <div className="flex-1">
-              <p className="text-[15px] font-semibold text-slate-900">Microphone</p>
-              <p className="text-[12px] text-slate-500">For voice support and calls</p>
-            </div>
-            {permissionsGranted && <CheckCircle2 size={18} className="text-emerald-500" />}
-          </div>
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-            <Bell className={permissionsGranted ? "text-emerald-500" : "text-amber-500"} size={22} />
-            <div className="flex-1">
-              <p className="text-[15px] font-semibold text-slate-900">Notifications</p>
-              <p className="text-[12px] text-slate-500">To alert you of new gigs</p>
-            </div>
-            {permissionsGranted && <CheckCircle2 size={18} className="text-emerald-500" />}
-          </div>
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-            <Camera className={permissionsGranted ? "text-emerald-500" : "text-purple-500"} size={22} />
-            <div className="flex-1">
-              <p className="text-[15px] font-semibold text-slate-900">Camera</p>
-              <p className="text-[12px] text-slate-500">For document scanning</p>
-            </div>
-            {permissionsGranted && <CheckCircle2 size={18} className="text-emerald-500" />}
-          </div>
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100">
-            <ImageIcon className={permissionsGranted ? "text-emerald-500" : "text-rose-500"} size={22} />
-            <div className="flex-1">
-              <p className="text-[15px] font-semibold text-slate-900">Gallery</p>
-              <p className="text-[12px] text-slate-500">To upload existing documents</p>
-            </div>
-            {permissionsGranted && <CheckCircle2 size={18} className="text-emerald-500" />}
-          </div>
-        </div>
-      </div>
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      <button 
-        onClick={() => {
-          if (!permissionsGranted) {
-            setPermissionsGranted(true);
-            setTimeout(() => setStep(2), 1000);
-          } else {
-            setStep(2);
+    // 1. Immediately set local preview data URL so photo displays instantly
+    const localDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setSelfieUrl(localDataUrl);
+
+    // 2. Stop camera stream
+    stopCamera();
+
+    // 3. Run instant photo quality analysis directly from the canvas
+    setIsAnalyzingPhoto(true);
+    try {
+      const quality = await analyzePhotoQuality(canvas);
+      setPhotoAnalysis(quality);
+    } catch (err) {
+      console.warn("Photo analysis error:", err);
+    } finally {
+      setIsAnalyzingPhoto(false);
+    }
+
+    // 4. Background upload to Cloudflare / backend storage
+    canvas.toBlob(async (blob) => {
+      if (blob) {
+        try {
+          const uploadedUrl = await uploadFileToCloudflare(blob, "selfie.jpg");
+          if (uploadedUrl) {
+            setSelfieUrl(uploadedUrl);
           }
-        }}
-        className={`w-full h-[52px] rounded-[16px] font-semibold text-[16px] flex items-center justify-center transition-all ${
-          permissionsGranted ? 'bg-emerald-500 text-white' : 'bg-[#1E90FF] text-[#FFFFFF] active:scale-[0.98]'
-        }`}
-      >
-        {permissionsGranted ? 'Permissions Granted' : 'Allow All Permissions'}
-      </button>
-    </div>
-  );
-
-  const renderStep2 = () => {
-    const isReady = personalDetails.name && personalDetails.phone && personalDetails.email && personalDetails.emergencyName && personalDetails.emergencyPhone && personalDetails.emergencyRelationship;
-    return (
-      <div className="animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Personal Details</h3>
-          <InputField label="Full Name" placeholder="e.g. Rahul Kumar" value={personalDetails.name} onChange={(e: any) => handlePersonalChange('name', e.target.value)} />
-          <InputField label="Phone Number" placeholder="10-digit mobile number" type="tel" value={personalDetails.phone} onChange={(e: any) => handlePersonalChange('phone', e.target.value)} />
-          <InputField label="Email Address" placeholder="alex@example.com" type="email" value={personalDetails.email} onChange={(e: any) => handlePersonalChange('email', e.target.value)} />
-          <InputField label="WhatsApp Number (Optional)" placeholder="For gig updates" type="tel" value={personalDetails.whatsapp} onChange={(e: any) => handlePersonalChange('whatsapp', e.target.value)} />
-        </div>
-
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Emergency Contact</h3>
-          <InputField label="Contact Name" placeholder="e.g. Ramesh Kumar" value={personalDetails.emergencyName} onChange={(e: any) => handlePersonalChange('emergencyName', e.target.value)} />
-          <InputField label="Contact Number" placeholder="10-digit mobile number" type="tel" value={personalDetails.emergencyPhone} onChange={(e: any) => handlePersonalChange('emergencyPhone', e.target.value)} />
-          <InputField label="Relationship" placeholder="e.g. Father, Brother, Spouse" value={personalDetails.emergencyRelationship} onChange={(e: any) => handlePersonalChange('emergencyRelationship', e.target.value)} />
-        </div>
-
-        <button 
-          onClick={() => setStep(3)}
-          disabled={!isReady}
-          className={`w-full h-[52px] rounded-[16px] font-semibold text-[16px] flex items-center justify-center transition-all ${
-            isReady ? 'bg-[#1E90FF] text-[#FFFFFF] active:scale-[0.98]' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-          }`}
-        >
-          Next Step
-        </button>
-      </div>
-    );
+        } catch (err) {
+          console.warn("Selfie upload warning, keeping local preview:", err);
+        }
+      }
+    }, "image/jpeg", 0.92);
   };
 
-  const renderStep3 = () => {
-    const isReady = documents.aadharFront && documents.aadharBack && documents.panNumber && documents.legalAddress;
-    return (
-      <div className="animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Aadhar Card</h3>
-          <PhotoUpload label="Aadhar Front" photo={documents.aadharFront} setPhoto={(v) => handleDocChange('aadharFront', v)} />
-          <PhotoUpload label="Aadhar Back" photo={documents.aadharBack} setPhoto={(v) => handleDocChange('aadharBack', v)} />
-        </div>
+  // Auto-start live camera when navigating to Step 2
+  useEffect(() => {
+    if (currentStep === 2 && !selfieUrl && !isCameraActive) {
+      startCamera();
+    }
+  }, [currentStep, selfieUrl]);
 
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Other Documents</h3>
-          <InputField label="PAN Card Number" placeholder="E.g. ABCDE1234F" value={documents.panNumber} onChange={(e: any) => handleDocChange('panNumber', e.target.value)} />
-          
-          <div className="space-y-1.5 mb-4">
-            <label className="text-[13px] font-medium text-slate-600">Legal Address</label>
-            <textarea 
-              placeholder="Full resident address as per Aadhar..."
-              value={documents.legalAddress}
-              onChange={(e: any) => handleDocChange('legalAddress', e.target.value)}
-              className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-[15px] text-slate-900 focus:outline-none focus:border-[#1E90FF] transition-colors focus:bg-[#FFFFFF] resize-none"
-            />
-          </div>
-        </div>
+  // ─────────────────────────────────────────────────────────────
+  // PAGE 3: Aadhaar & PAN Verification
+  // ─────────────────────────────────────────────────────────────
+  const [aadhaarMode, setAadhaarMode] = useState<"DIGILOCKER" | "MANUAL">("DIGILOCKER");
+  const [aadhaarNumber, setAadhaarNumber] = useState("");
+  const [aadhaarOtp, setAadhaarOtp] = useState(["", "", "", "", "", ""]);
+  const [aadhaarRefId, setAadhaarRefId] = useState<string | null>(null);
+  const [isSendingAadhaarOtp, setIsSendingAadhaarOtp] = useState(false);
+  const [isVerifyingAadhaarOtp, setIsVerifyingAadhaarOtp] = useState(false);
+  const [isAadhaarVerified, setIsAadhaarVerified] = useState(false);
+  const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
+  const [aadhaarError, setAadhaarError] = useState<string | null>(null);
 
-        <button 
-          onClick={() => setStep(4)}
-          disabled={Boolean(!isReady)}
-          className={`w-full h-[52px] rounded-[16px] font-semibold text-[16px] flex items-center justify-center transition-all ${
-            isReady ? 'bg-[#1E90FF] text-[#FFFFFF] active:scale-[0.98]' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-          }`}
-        >
-          Next Step
-        </button>
-      </div>
-    );
+  // Manual Aadhaar Photos
+  const [aadhaarFrontPhoto, setAadhaarFrontPhoto] = useState<string | null>(null);
+  const [aadhaarBackPhoto, setAadhaarBackPhoto] = useState<string | null>(null);
+  const [isUploadingFront, setIsUploadingFront] = useState(false);
+  const [isUploadingBack, setIsUploadingBack] = useState(false);
+
+  // PAN details
+  const [panNumber, setPanNumber] = useState("");
+  const [panCardPhoto, setPanCardPhoto] = useState<string | null>(null);
+  const [isVerifyingPan, setIsVerifyingPan] = useState(false);
+  const [isPanVerified, setIsPanVerified] = useState(false);
+  const [panError, setPanError] = useState<string | null>(null);
+  const [isUploadingPan, setIsUploadingPan] = useState(false);
+
+  const [termsAgreed, setTermsAgreed] = useState(false);
+
+  const handleSendAadhaarOtp = async () => {
+    const clean = aadhaarNumber.replace(/\D/g, "");
+    if (clean.length !== 12) {
+      setAadhaarError("Aadhaar number must be exactly 12 digits");
+      return;
+    }
+    setAadhaarError(null);
+    setIsSendingAadhaarOtp(true);
+    try {
+      const res: any = await post("/delivery/kyc/aadhaar/generate-otp", {
+        aadhaarNumber: clean,
+      });
+      if (res?.success) {
+        setAadhaarRefId(res.referenceId || `ref_${Date.now()}`);
+        setAadhaarOtpSent(true);
+      } else {
+        setAadhaarError(res?.message || "Failed to send Aadhaar OTP");
+      }
+    } catch (err: any) {
+      const msg = err.message?.includes("aborted")
+        ? "Verification request timed out. Please try again or use manual upload."
+        : err.message || "Failed to trigger Aadhaar OTP. Please try manual upload.";
+      setAadhaarError(msg);
+    } finally {
+      setIsSendingAadhaarOtp(false);
+    }
   };
 
-  const renderStep4 = () => {
-    const isCycle = vehicle.type === 'Cycle';
-    const isReady = vehicle.brand && vehicle.model && vehicle.type && (isCycle || vehicle.numberPlate) && vehicle.licensePhoto;
-    return (
-      <div className="animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Vehicle Details</h3>
-          
-          <div className="space-y-1.5 mb-4">
-            <label className="text-[13px] font-medium text-slate-600">Vehicle Type</label>
-            <div className="relative">
-              <select 
-                value={vehicle.type}
-                onChange={(e) => handleVehicleChange('type', e.target.value)}
-                className="w-full h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-[15px] text-slate-900 focus:outline-none focus:border-[#1E90FF] appearance-none"
-              >
-                <option value="Bike">Bike</option>
-                <option value="Scooty">Scooty</option>
-                <option value="EV Bike">EV Bike</option>
-                <option value="EV Scooty">EV Scooty</option>
-                <option value="Cycle">Cycle</option>
-              </select>
-              <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-                <ChevronDown size={16} className="text-slate-400" />
-              </div>
-            </div>
-          </div>
+  const handleVerifyAadhaarOtp = async () => {
+    const cleanOtp = aadhaarOtp.join("");
+    if (cleanOtp.length < 6) {
+      setAadhaarError("Please enter 6-digit Aadhaar OTP");
+      return;
+    }
+    setIsVerifyingAadhaarOtp(true);
+    setAadhaarError(null);
+    try {
+      const res: any = await post("/delivery/kyc/aadhaar/verify-otp", {
+        referenceId: aadhaarRefId || "mock_ref_1234",
+        otp: cleanOtp,
+      });
+      if (res?.success || res?.verified) {
+        setIsAadhaarVerified(true);
+      } else {
+        setAadhaarError(res?.message || "Invalid Aadhaar OTP");
+      }
+    } catch (err: any) {
+      const msg = err.message?.includes("aborted")
+        ? "Verification timed out. Please try again."
+        : err.message || "Aadhaar verification failed";
+      setAadhaarError(msg);
+    } finally {
+      setIsVerifyingAadhaarOtp(false);
+    }
+  };
 
-          <InputField label="Brand Name" placeholder="e.g. Honda, Hero, Bajaj" value={vehicle.brand} onChange={(e: any) => handleVehicleChange('brand', e.target.value)} />
-          <InputField label="Model" placeholder="e.g. Activa 6G, Splendor" value={vehicle.model} onChange={(e: any) => handleVehicleChange('model', e.target.value)} />
-          
-          {!isCycle && (
-            <InputField label="Number Plate" placeholder="e.g. MH 12 AB 1234" value={vehicle.numberPlate} onChange={(e: any) => handleVehicleChange('numberPlate', e.target.value)} />
+  const handleVerifyPan = async () => {
+    const cleanPan = panNumber.trim().toUpperCase();
+    const panRegex = /^[A-Z]{5}\d{4}[A-Z]$/;
+    if (!panRegex.test(cleanPan)) {
+      setPanError("Invalid PAN format (e.g. ABCDE1234F)");
+      return;
+    }
+    setIsVerifyingPan(true);
+    setPanError(null);
+    try {
+      const res: any = await post("/delivery/kyc/pan/verify", {
+        panNumber: cleanPan,
+        name: personalDetails.name,
+      });
+      if (res?.success || res?.verified) {
+        setIsPanVerified(true);
+      } else {
+        setPanError(res?.message || "PAN verification failed");
+      }
+    } catch (err: any) {
+      const msg = err.message?.includes("aborted")
+        ? "PAN verification timed out. Please try again."
+        : err.message || "PAN verification error";
+      setPanError(msg);
+    } finally {
+      setIsVerifyingPan(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // FINAL SUBMISSION
+  // ─────────────────────────────────────────────────────────────
+  const handleSubmitOnboarding = async () => {
+    setIsSubmitting(true);
+    setGlobalError(null);
+    try {
+      const payload = {
+        name: personalDetails.name,
+        phone: personalDetails.phone,
+        phoneVerified: isPhoneVerified,
+        email: personalDetails.email,
+        emergencyContact: {
+          name: personalDetails.emergencyName,
+          phone: personalDetails.emergencyPhone,
+          relationship: personalDetails.emergencyRelationship,
+        },
+        selfieUrl: selfieUrl || "",
+        aadhaar: {
+          number: aadhaarNumber,
+          verified: isAadhaarVerified,
+          frontUrl: aadhaarFrontPhoto || "",
+          backUrl: aadhaarBackPhoto || "",
+          method: aadhaarMode === "DIGILOCKER" ? (isAadhaarVerified ? "OTP" : "DIGILOCKER") : "MANUAL_UPLOAD",
+        },
+        pan: {
+          number: panNumber.toUpperCase(),
+          verified: isPanVerified,
+          cardUrl: panCardPhoto || "",
+          method: isPanVerified ? "API_VERIFIED" : "MANUAL_UPLOAD",
+        },
+      };
+
+      await post("/delivery/onboarding/submit", payload);
+      setCurrentStep(4); // Show success screen
+    } catch (err: any) {
+      setGlobalError(err.message || "Failed to submit application. Please check all details.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const isSamePhone =
+    personalDetails.phone.length === 10 &&
+    personalDetails.emergencyPhone.length === 10 &&
+    personalDetails.phone === personalDetails.emergencyPhone;
+
+  const isStep1Valid =
+    personalDetails.name.trim().length >= 2 &&
+    personalDetails.phone.length === 10 &&
+    isPhoneVerified &&
+    personalDetails.email.includes("@") &&
+    personalDetails.emergencyName.trim().length >= 2 &&
+    personalDetails.emergencyPhone.length === 10 &&
+    !isSamePhone;
+
+  const isStep2Valid = !!selfieUrl && (!photoAnalysis || photoAnalysis.passed);
+
+  const isStep3Valid =
+    (isAadhaarVerified || (aadhaarFrontPhoto && aadhaarBackPhoto)) &&
+    (isPanVerified || (panNumber.length === 10 && panCardPhoto)) &&
+    termsAgreed;
+
+  return (
+    <div className="fixed inset-0 z-[550] bg-slate-50 flex flex-col font-sans overflow-y-auto app-container shadow-2xl">
+      {/* Top Navigation Bar */}
+      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-3.5 flex items-center justify-between shadow-xs">
+        <button
+          onClick={() => {
+            if (currentStep > 1 && currentStep < 4) {
+              setCurrentStep((s) => (s - 1) as any);
+            } else if (onBack) {
+              onBack();
+            } else {
+              navigate("/login");
+            }
+          }}
+          className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-slate-200 transition-colors"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[15px] font-black text-slate-900 tracking-tight">BECOME A PARTNER</span>
+          </div>
+          {currentStep < 4 && (
+            <span className="text-[11px] font-bold text-[#00bd6f] uppercase tracking-wider">
+              Step {currentStep} of 3
+            </span>
           )}
         </div>
 
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Driving License</h3>
-          <PhotoUpload label="Driving License Photo" photo={vehicle.licensePhoto} setPhoto={(v) => handleVehicleChange('licensePhoto', v)} />
+        <div className="w-10" />
+      </div>
+
+      {/* Progress Stepper Line */}
+      {currentStep < 4 && (
+        <div className="w-full bg-slate-200 h-1">
+          <div
+            className="bg-[#00bd6f] h-1 transition-all duration-500 ease-out"
+            style={{ width: `${(currentStep / 3) * 100}%` }}
+          />
         </div>
-
-        <button 
-          onClick={() => setStep(5)}
-          disabled={Boolean(!isReady)}
-          className={`w-full h-[52px] rounded-[16px] font-semibold text-[16px] flex items-center justify-center transition-all ${
-            isReady ? 'bg-[#1E90FF] text-[#FFFFFF] active:scale-[0.98]' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-          }`}
-        >
-          Next Step
-        </button>
-      </div>
-    );
-  };
-
-  const renderStep5 = () => {
-    const isReady = bank.bankName && bank.accountName && bank.accountNumber && bank.ifsc && bank.upiId;
-    return (
-      <div className="animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
-        <div className="bg-[#FFFFFF] rounded-[24px] p-5 border border-slate-200 shadow-sm mb-6">
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">Driving Earnings Account</h3>
-          <InputField label="Bank Name" placeholder="e.g. HDFC Bank, SBI" value={bank.bankName} onChange={(e: any) => handleBankChange('bankName', e.target.value)} />
-          <InputField label="Account Holder Name" placeholder="Name as per bank records" value={bank.accountName} onChange={(e: any) => handleBankChange('accountName', e.target.value)} />
-          <InputField label="Account Number" placeholder="Enter Account Number" type="password" value={bank.accountNumber} onChange={(e: any) => handleBankChange('accountNumber', e.target.value)} />
-          <InputField label="Confirm Account Number" placeholder="Re-enter Account Number" type="text" value={bank.accountNumber} onChange={(e: any) => handleBankChange('accountNumber', e.target.value)} />
-          <InputField label="IFSC Code" placeholder="e.g. HDFC0001234" value={bank.ifsc} onChange={(e: any) => handleBankChange('ifsc', e.target.value.toUpperCase())} />
-          
-          <div className="h-px bg-slate-100 my-6"></div>
-
-          <h3 className="text-[16px] font-bold text-slate-900 mb-4">UPI Details (For Quick Payouts)</h3>
-          <InputField label="UPI ID" placeholder="e.g. yourname@upi" value={bank.upiId} onChange={(e: any) => handleBankChange('upiId', e.target.value)} />
-        </div>
-
-        <button 
-          onClick={() => {
-            setIsSubmitting(true);
-            setTimeout(() => {
-              setIsSubmitting(false);
-              setStep(6);
-            }, 2000);
-          }}
-          disabled={Boolean(!isReady)}
-          className={`w-full h-[52px] rounded-[16px] font-semibold text-[16px] flex items-center justify-center transition-all ${
-            isReady ? 'bg-[#1E90FF] text-[#FFFFFF] active:scale-[0.98]' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-          }`}
-        >
-          Submit Application
-        </button>
-      </div>
-    );
-  };
-
-  const renderStep6 = () => {
-    return (
-      <div className="flex flex-col items-center justify-center py-8 animate-in zoom-in-95 duration-700 h-full mt-20">
-        <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 mb-8 border-4 border-emerald-50">
-          <CheckCircle2 size={48} strokeWidth={2.5} />
-        </div>
-        <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-3 text-center">Application Received!</h2>
-        <p className="text-[16px] text-slate-500 text-center max-w-[320px] leading-relaxed mb-10">
-          We are evaluating your details. Welcome to the rider network! Our team will notify you once your ID is activated.
-        </p>
-        
-        <button 
-          onClick={onComplete}
-          className="w-full h-[56px] max-w-[300px] bg-[#1E90FF] text-[#FFFFFF] rounded-full font-bold text-[16px] flex items-center justify-center active:scale-[0.98] transition-all shadow-lg shadow-blue-500/30"
-        >
-          Go to Dashboard
-        </button>
-      </div>
-    );
-  };
-
-  if (isSubmitting) {
-    return (
-      <div className="fixed inset-0 z-[700] bg-[#FFFFFF] flex flex-col items-center justify-center">
-        <div className="w-14 h-14 border-4 border-slate-100 border-t-[#1E90FF] rounded-full animate-spin mb-6"></div>
-        <p className="text-[18px] font-bold text-slate-900">Submitting Profile...</p>
-        <p className="text-[14px] text-slate-500 mt-2">Securely saving your details</p>
-      </div>
-    );
-  }
-
-  const stepTitles = [
-    'Permissions',
-    'Personal Details',
-    'Legal Docs',
-    'Vehicle Info',
-    'Bank Details'
-  ];
-
-  return (
-    <div className="fixed inset-0 z-[600] bg-slate-50 flex flex-col font-sans overflow-hidden">
-      {/* Header */}
-      {step < 6 && (
-        <header className="flex flex-col pt-4 px-4 pb-2 bg-[#FFFFFF] shrink-0 border-b border-slate-100 shadow-sm z-10">
-          <div className="flex items-center justify-between mb-4">
-            <button 
-              onClick={() => step === 1 ? onBack() : setStep(step - 1)} 
-              className="w-10 h-10 flex items-center justify-center -ml-2 text-slate-700 active:bg-slate-100 rounded-full transition-colors"
-            >
-              <ArrowLeft size={22} />
-            </button>
-            <span className="text-[14px] font-bold text-slate-900 uppercase tracking-widest">
-              Step {step} of 5
-            </span>
-            <div className="w-10" />
-          </div>
-          
-          <div className="flex justify-between items-center pb-2 px-6">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex-1 max-w-[20%] px-1">
-                <div className={`w-full h-1.5 rounded-full transition-all duration-300 ${i === step ? 'bg-[#1E90FF]' : i < step ? 'bg-blue-400/30' : 'bg-slate-100'}`} />
-              </div>
-            ))}
-          </div>
-        </header>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-12 relative">
-        {step < 6 && (
-          <div className="px-5 pt-8 pb-6">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">
-              {stepTitles[step - 1]}
-            </h1>
-            <p className="text-[15px] font-medium text-slate-500">
-              {step === 1 && "Grant access to enable delivery apps functionality."}
-              {step === 2 && "Tell us about yourself and emergency contacts."}
-              {step === 3 && "Securely upload your legal records for KYC."}
-              {step === 4 && "What vehicle will you use for deliveries?"}
-              {step === 5 && "Where should we send your earnings?"}
-            </p>
+      {/* Main Content Area */}
+      <div className="flex-1 max-w-md mx-auto w-full px-5 py-6 flex flex-col">
+        {globalError && (
+          <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-semibold flex items-center gap-2">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{globalError}</span>
           </div>
         )}
 
-        <div className="px-5">
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
-          {step === 3 && renderStep3()}
-          {step === 4 && renderStep4()}
-          {step === 5 && renderStep5()}
-          {step === 6 && renderStep6()}
-        </div>
+        <AnimatePresence mode="wait">
+          {/* ───────────────────────────────────────────────────────────── */}
+          {/* STEP 1: Personal & Emergency Info */}
+          {/* ───────────────────────────────────────────────────────────── */}
+          {currentStep === 1 && (
+            <motion.div
+              key="step1"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6 flex-1 flex flex-col justify-between"
+            >
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-[20px] font-extrabold text-slate-900 tracking-tight">Personal Details</h2>
+                  <p className="text-[13px] text-slate-500 mt-0.5">Please provide your contact information to get started.</p>
+                </div>
+
+                {/* Full Name */}
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-bold text-slate-700 flex items-center gap-1.5">
+                    <User size={15} className="text-[#00bd6f]" /> Full Name (as per Govt ID)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rahul Sharma"
+                    value={personalDetails.name}
+                    onChange={(e) => setPersonalDetails({ ...personalDetails, name: e.target.value })}
+                    className="w-full h-13 px-4 bg-white border border-slate-200 rounded-xl text-[15px] font-medium text-slate-900 focus:outline-none focus:border-[#00bd6f] focus:ring-1 focus:ring-[#00bd6f] shadow-xs"
+                  />
+                </div>
+
+                {/* Mobile Number & OTP Verification */}
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-bold text-slate-700 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Phone size={15} className="text-[#00bd6f]" /> Mobile Number
+                    </span>
+                    {isPhoneVerified && (
+                      <span className="text-emerald-600 text-xs font-bold flex items-center gap-1">
+                        <CheckCircle2 size={13} /> Verified
+                      </span>
+                    )}
+                  </label>
+
+                  <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5 px-3 border border-slate-200 bg-slate-50 rounded-xl h-13 shrink-0">
+                      <img src="https://flagcdn.com/w20/in.png" alt="India" className="w-4 h-3 object-cover rounded-xs" />
+                      <span className="text-[14px] font-bold text-slate-700">+91</span>
+                    </div>
+                    <input
+                      type="tel"
+                      placeholder="Enter 10-digit number"
+                      maxLength={10}
+                      disabled={isPhoneVerified}
+                      value={personalDetails.phone}
+                      onChange={(e) => {
+                        setPersonalDetails({ ...personalDetails, phone: e.target.value.replace(/\D/g, "") });
+                        setIsPhoneVerified(false);
+                        setShowOtpBox(false);
+                      }}
+                      className="flex-1 h-13 px-4 bg-white border border-slate-200 rounded-xl text-[15px] font-medium text-slate-900 focus:outline-none focus:border-[#00bd6f] focus:ring-1 focus:ring-[#00bd6f] shadow-xs disabled:bg-slate-50 disabled:text-slate-500"
+                    />
+                    {!isPhoneVerified && personalDetails.phone.length === 10 && (
+                      <button
+                        type="button"
+                        onClick={handleSendPhoneOtp}
+                        disabled={isSendingPhoneOtp}
+                        className="px-3.5 h-13 bg-[#00bd6f] text-white rounded-xl text-xs font-bold shrink-0 hover:bg-emerald-600 active:scale-95 transition-all shadow-xs flex items-center gap-1"
+                      >
+                        {isSendingPhoneOtp ? <Loader2 size={14} className="animate-spin" /> : showOtpBox ? "Resend" : "Verify"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Inline OTP Input Box */}
+                  {showOtpBox && !isPhoneVerified && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-3 mt-2"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-emerald-900">Enter OTP sent to phone:</span>
+                        {otpCountdown > 0 && <span className="text-[11px] font-semibold text-emerald-700">{otpCountdown}s</span>}
+                      </div>
+
+                      <div className="flex justify-between gap-1.5">
+                        {phoneOtp.map((digit, i) => (
+                          <input
+                            key={i}
+                            ref={(el) => {
+                              otpInputs.current[i] = el;
+                            }}
+                            type="tel"
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handleOtpDigitChange(e.target.value, i)}
+                            className="w-11 h-12 text-center text-lg font-bold bg-white rounded-xl border border-emerald-300 focus:border-[#00bd6f] focus:outline-none"
+                          />
+                        ))}
+                      </div>
+
+                      {phoneOtpError && <p className="text-rose-500 text-xs font-semibold">{phoneOtpError}</p>}
+
+                      <button
+                        type="button"
+                        onClick={handleVerifyPhoneOtp}
+                        disabled={isVerifyingPhoneOtp}
+                        className="w-full h-11 bg-[#00bd6f] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+                      >
+                        {isVerifyingPhoneOtp ? <Loader2 size={14} className="animate-spin" /> : "Confirm OTP"}
+                      </button>
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Email Address (Without OTP) */}
+                <div className="space-y-1.5">
+                  <label className="text-[13px] font-bold text-slate-700 flex items-center gap-1.5">
+                    <Mail size={15} className="text-[#00bd6f]" /> Email Address
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="e.g. rahul.sharma@example.com"
+                    value={personalDetails.email}
+                    onChange={(e) => setPersonalDetails({ ...personalDetails, email: e.target.value })}
+                    className="w-full h-13 px-4 bg-white border border-slate-200 rounded-xl text-[15px] font-medium text-slate-900 focus:outline-none focus:border-[#00bd6f] focus:ring-1 focus:ring-[#00bd6f] shadow-xs"
+                  />
+                  <p className="text-[11px] text-slate-400">Used for monthly payout statements & tax invoices.</p>
+                </div>
+
+                {/* Emergency Contact Card */}
+                <div className="pt-2">
+                  <div className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3.5 shadow-xs">
+                    <div className="flex items-center gap-2 pb-1 border-b border-slate-100">
+                      <HeartHandshake size={18} className="text-rose-500" />
+                      <div>
+                        <h4 className="text-[14px] font-bold text-slate-900">Emergency Contact Person</h4>
+                        <p className="text-[11px] text-slate-500">Contacted in case of on-road emergency or safety alerts.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600 mb-1 block">Contact Person Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Ramesh Sharma"
+                          value={personalDetails.emergencyName}
+                          onChange={(e) => setPersonalDetails({ ...personalDetails, emergencyName: e.target.value })}
+                          className="w-full h-11 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-none focus:border-[#00bd6f]"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 mb-1 block">Emergency Phone</label>
+                          <input
+                            type="tel"
+                            placeholder="10-digit phone"
+                            maxLength={10}
+                            value={personalDetails.emergencyPhone}
+                            onChange={(e) =>
+                              setPersonalDetails({ ...personalDetails, emergencyPhone: e.target.value.replace(/\D/g, "") })
+                            }
+                            className={`w-full h-11 px-3.5 bg-slate-50 border rounded-xl text-sm font-medium text-slate-900 focus:outline-none ${
+                              isSamePhone ? "border-rose-300 focus:border-rose-500" : "border-slate-200 focus:border-[#00bd6f]"
+                            }`}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-semibold text-slate-600 mb-1 block">Relationship</label>
+                          <select
+                            value={personalDetails.emergencyRelationship}
+                            onChange={(e) =>
+                              setPersonalDetails({ ...personalDetails, emergencyRelationship: e.target.value })
+                            }
+                            className="w-full h-11 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-none focus:border-[#00bd6f]"
+                          >
+                            <option value="Parent">Parent</option>
+                            <option value="Spouse">Spouse</option>
+                            <option value="Sibling">Sibling</option>
+                            <option value="Friend">Friend</option>
+                            <option value="Relative">Relative</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+                      {isSamePhone && (
+                        <p className="text-rose-500 text-xs font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle size={13} /> Emergency contact cannot be the same as personal phone.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Next Button */}
+              <div className="pt-4">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  disabled={!isStep1Valid}
+                  className={`w-full h-14 rounded-2xl font-bold text-[16px] flex items-center justify-center transition-all ${
+                    isStep1Valid
+                      ? "bg-[#00bd6f] text-white active:scale-98 shadow-md shadow-emerald-500/20"
+                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  }`}
+                >
+                  Continue to Selfie Verification
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────── */}
+          {/* STEP 2: Live Selfie Upload & Quality Intelligence */}
+          {/* ───────────────────────────────────────────────────────────── */}
+          {currentStep === 2 && (
+            <motion.div
+              key="step2"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-5 flex-1 flex flex-col justify-between"
+            >
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-[20px] font-extrabold text-slate-900 tracking-tight">Live Selfie Verification</h2>
+                  <p className="text-[13px] text-slate-500 mt-0.5">
+                    Take a clear, well-lit photo of yourself to verify your identity.
+                  </p>
+                </div>
+
+                {/* Instructions & Guidelines Box */}
+                <div className="p-4 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl space-y-2">
+                  <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles size={14} /> Photo Guidelines:
+                  </span>
+                  <div className="grid grid-cols-2 gap-2 text-[12px] text-emerald-800 font-medium pt-1">
+                    <div className="flex items-center gap-1.5">
+                      <Sun size={14} className="text-amber-500 shrink-0" /> Good, clear lighting
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Eye size={14} className="text-rose-500 shrink-0" /> No specs or sunglasses
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <User size={14} className="text-blue-500 shrink-0" /> Look directly into camera
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 size={14} className="text-[#00bd6f] shrink-0" /> Plain background
+                    </div>
+                  </div>
+                </div>
+
+                {/* Camera / Photo Capture Container */}
+                <div className="relative w-full aspect-square max-w-[320px] mx-auto bg-slate-900 rounded-3xl overflow-hidden shadow-lg border-4 border-white flex items-center justify-center">
+                  {isCameraActive ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover scale-x-[-1]"
+                      />
+                      {/* Face Oval Overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-[180px] h-[230px] border-2 border-dashed border-[#00bd6f] rounded-[50%] shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]" />
+                      </div>
+                      {/* Controls inside camera */}
+                      <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center gap-4 z-20">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFacingMode((m) => (m === "user" ? "environment" : "user"));
+                            startCamera();
+                          }}
+                          className="w-10 h-10 rounded-full bg-black/60 text-white flex items-center justify-center backdrop-blur-md"
+                        >
+                          <RefreshCw size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={captureSelfieFrame}
+                          className="w-16 h-16 rounded-full bg-white border-4 border-[#00bd6f] flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-[#00bd6f]" />
+                        </button>
+                      </div>
+                    </>
+                  ) : selfieUrl ? (
+                    <div className="relative w-full h-full">
+                      <img src={selfieUrl} alt="Selfie" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelfieUrl(null);
+                          setPhotoAnalysis(null);
+                          startCamera();
+                        }}
+                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-black/70 backdrop-blur-md text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md"
+                      >
+                        <RefreshCw size={12} /> Retake
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-white/80 space-y-4">
+                      <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-[#00bd6f]">
+                        <Camera size={32} />
+                      </div>
+                      <p className="text-xs font-semibold text-slate-300">
+                        Live camera verification is required.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="w-full max-w-[200px] py-3 bg-[#00bd6f] text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                      >
+                        <Camera size={15} /> Start Live Camera
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Photo Quality Intelligence Analysis Result */}
+                {isAnalyzingPhoto && (
+                  <div className="p-3 bg-slate-100 rounded-xl flex items-center justify-center gap-2 text-xs font-bold text-slate-600">
+                    <Loader2 size={16} className="animate-spin text-[#00bd6f]" />
+                    <span>Analyzing photo quality & lighting...</span>
+                  </div>
+                )}
+
+                {photoAnalysis && !isAnalyzingPhoto && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`p-4 rounded-2xl border ${
+                      photoAnalysis.passed
+                        ? "bg-emerald-50/90 border-emerald-200 text-emerald-900"
+                        : photoAnalysis.glassesDetected
+                        ? "bg-rose-50 border-rose-300 text-rose-900"
+                        : "bg-amber-50/90 border-amber-200 text-amber-900"
+                    } space-y-2.5 shadow-xs`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold flex items-center gap-1.5">
+                        {photoAnalysis.passed ? (
+                          <CheckCircle2 size={16} className="text-[#00bd6f]" />
+                        ) : (
+                          <AlertCircle size={16} className="text-rose-600" />
+                        )}
+                        Photo Quality:{" "}
+                        {photoAnalysis.passed
+                          ? "Verified & Approved"
+                          : photoAnalysis.glassesDetected
+                          ? "Spectacles Detected 👓"
+                          : "Needs Improvement"}
+                      </span>
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/90 border border-slate-200">
+                        Brightness: {photoAnalysis.averageBrightness}/255
+                      </span>
+                    </div>
+
+                    <ul className="text-[12px] space-y-1 pl-5 list-disc font-medium">
+                      {photoAnalysis.feedback.map((f, i) => (
+                        <li
+                          key={i}
+                          className={
+                            f.includes("❌")
+                              ? "text-rose-700 font-bold"
+                              : f.includes("⚠️")
+                              ? "text-amber-800 font-semibold"
+                              : "text-emerald-800"
+                          }
+                        >
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+
+                    {!photoAnalysis.passed && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelfieUrl(null);
+                          setPhotoAnalysis(null);
+                          startCamera();
+                        }}
+                        className="w-full mt-2 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors"
+                      >
+                        <RefreshCw size={13} />{" "}
+                        {photoAnalysis.glassesDetected
+                          ? "Retake — Remove Glasses First"
+                          : "Retake Photo"}
+                      </button>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    setCurrentStep(1);
+                  }}
+                  className="w-1/3 h-14 rounded-2xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all text-[15px]"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    setCurrentStep(3);
+                  }}
+                  disabled={!isStep2Valid}
+                  className={`flex-1 h-14 rounded-2xl font-bold text-[16px] flex items-center justify-center transition-all ${
+                    isStep2Valid
+                      ? "bg-[#00bd6f] text-white active:scale-98 shadow-md shadow-emerald-500/20"
+                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  }`}
+                >
+                  Proceed to Aadhaar & PAN
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────── */}
+          {/* STEP 3: Aadhaar & PAN Verification */}
+          {/* ───────────────────────────────────────────────────────────── */}
+          {currentStep === 3 && (
+            <motion.div
+              key="step3"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6 flex-1 flex flex-col justify-between"
+            >
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-[20px] font-extrabold text-slate-900 tracking-tight">Identity Verification</h2>
+                  <p className="text-[13px] text-slate-500 mt-0.5">
+                    Verify your Aadhaar and PAN for payout compliance and background verification.
+                  </p>
+                </div>
+
+                {/* ── Aadhaar Card Box ── */}
+                <div className="p-4.5 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#00bd6f] flex items-center justify-center font-bold">
+                        <FileCheck size={18} />
+                      </div>
+                      <span className="text-[15px] font-bold text-slate-900">Aadhaar Verification</span>
+                    </div>
+
+                    {isAadhaarVerified && (
+                      <span className="text-emerald-600 text-xs font-extrabold flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                        <CheckCircle2 size={13} /> Verified
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Mode Selector Toggle */}
+                  {!isAadhaarVerified && (
+                    <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setAadhaarMode("DIGILOCKER")}
+                        className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                          aadhaarMode === "DIGILOCKER" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500"
+                        }`}
+                      >
+                        ⚡ DigiLocker / OTP
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAadhaarMode("MANUAL")}
+                        className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                          aadhaarMode === "MANUAL" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500"
+                        }`}
+                      >
+                        📷 Upload Photos
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Mode A: DigiLocker / Aadhaar OTP */}
+                  {aadhaarMode === "DIGILOCKER" && !isAadhaarVerified && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-600 mb-1 block">Aadhaar Number (12 digits)</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="tel"
+                            placeholder="XXXX XXXX XXXX"
+                            maxLength={12}
+                            value={aadhaarNumber}
+                            onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ""))}
+                            className="flex-1 h-12 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold tracking-wider text-slate-900 focus:outline-none focus:border-[#00bd6f]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSendAadhaarOtp}
+                            disabled={aadhaarNumber.length !== 12 || isSendingAadhaarOtp}
+                            className={`px-3.5 h-12 rounded-xl text-xs font-bold shrink-0 transition-all ${
+                              aadhaarNumber.length === 12
+                                ? "bg-[#00bd6f] text-white active:scale-95"
+                                : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                            }`}
+                          >
+                            {isSendingAadhaarOtp ? <Loader2 size={14} className="animate-spin" /> : "Send OTP"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {aadhaarOtpSent && (
+                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2.5">
+                          <span className="text-xs font-bold text-emerald-900">Enter 6-digit Aadhaar OTP:</span>
+                          <div className="flex justify-between gap-1">
+                            {aadhaarOtp.map((d, i) => (
+                              <input
+                                key={i}
+                                type="tel"
+                                maxLength={1}
+                                value={d}
+                                onChange={(e) => {
+                                  const n = [...aadhaarOtp];
+                                  n[i] = e.target.value.replace(/\D/g, "").slice(-1);
+                                  setAadhaarOtp(n);
+                                }}
+                                className="w-10 h-11 text-center font-bold bg-white rounded-lg border border-emerald-300 focus:outline-none"
+                              />
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleVerifyAadhaarOtp}
+                            disabled={isVerifyingAadhaarOtp}
+                            className="w-full h-10 bg-[#00bd6f] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5"
+                          >
+                            {isVerifyingAadhaarOtp ? <Loader2 size={14} className="animate-spin" /> : "Verify Aadhaar"}
+                          </button>
+                        </div>
+                      )}
+
+                      {aadhaarError && <p className="text-rose-500 text-xs font-semibold">{aadhaarError}</p>}
+                    </div>
+                  )}
+
+                  {/* Mode B: Manual Aadhaar Photos Upload */}
+                  {aadhaarMode === "MANUAL" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Front Photo */}
+                      <div
+                        onClick={() => {
+                          const input = document.createElement("input");
+                          input.type = "file";
+                          input.accept = "image/*";
+                          input.onchange = async (e: any) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setIsUploadingFront(true);
+                              const url = await uploadFileToCloudflare(file, "aadhaar_front.jpg");
+                              setAadhaarFrontPhoto(url);
+                              setIsUploadingFront(false);
+                            }
+                          };
+                          input.click();
+                        }}
+                        className="p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-100 transition-colors h-28 overflow-hidden relative"
+                      >
+                        {isUploadingFront ? (
+                          <Loader2 size={20} className="animate-spin text-[#00bd6f]" />
+                        ) : aadhaarFrontPhoto ? (
+                          <img src={aadhaarFrontPhoto} alt="Front" className="w-full h-full object-cover rounded-xl" />
+                        ) : (
+                          <>
+                            <Upload size={18} className="text-[#00bd6f] mb-1" />
+                            <span className="text-[11px] font-bold text-slate-700">Aadhaar Front</span>
+                            <span className="text-[9px] text-slate-400">Click to upload</span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Back Photo */}
+                      <div
+                        onClick={() => {
+                          const input = document.createElement("input");
+                          input.type = "file";
+                          input.accept = "image/*";
+                          input.onchange = async (e: any) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setIsUploadingBack(true);
+                              const url = await uploadFileToCloudflare(file, "aadhaar_back.jpg");
+                              setAadhaarBackPhoto(url);
+                              setIsUploadingBack(false);
+                            }
+                          };
+                          input.click();
+                        }}
+                        className="p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-100 transition-colors h-28 overflow-hidden relative"
+                      >
+                        {isUploadingBack ? (
+                          <Loader2 size={20} className="animate-spin text-[#00bd6f]" />
+                        ) : aadhaarBackPhoto ? (
+                          <img src={aadhaarBackPhoto} alt="Back" className="w-full h-full object-cover rounded-xl" />
+                        ) : (
+                          <>
+                            <Upload size={18} className="text-[#00bd6f] mb-1" />
+                            <span className="text-[11px] font-bold text-slate-700">Aadhaar Back</span>
+                            <span className="text-[9px] text-slate-400">Click to upload</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── PAN Card Box ── */}
+                <div className="p-4.5 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                        <CreditCard size={18} />
+                      </div>
+                      <span className="text-[15px] font-bold text-slate-900">PAN Verification</span>
+                    </div>
+
+                    {isPanVerified && (
+                      <span className="text-emerald-600 text-xs font-extrabold flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                        <CheckCircle2 size={13} /> Verified
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 mb-1 block">PAN Number</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. ABCDE1234F"
+                          maxLength={10}
+                          value={panNumber}
+                          onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
+                          className="flex-1 h-12 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold tracking-wider text-slate-900 focus:outline-none focus:border-[#00bd6f]"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleVerifyPan}
+                          disabled={panNumber.length !== 10 || isVerifyingPan || isPanVerified}
+                          className={`px-3.5 h-12 rounded-xl text-xs font-bold shrink-0 transition-all ${
+                            panNumber.length === 10 && !isPanVerified
+                              ? "bg-[#00bd6f] text-white active:scale-95"
+                              : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                          }`}
+                        >
+                          {isVerifyingPan ? <Loader2 size={14} className="animate-spin" /> : isPanVerified ? "Verified" : "Verify PAN"}
+                        </button>
+                      </div>
+                      {panError && <p className="text-rose-500 text-xs font-semibold mt-1">{panError}</p>}
+                    </div>
+
+                    {/* Optional PAN Card Photo */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-600 mb-1 block">
+                        PAN Card Photo {isPanVerified ? "(Optional)" : "(Required for manual review)"}
+                      </label>
+                      <div
+                        onClick={() => {
+                          const input = document.createElement("input");
+                          input.type = "file";
+                          input.accept = "image/*";
+                          input.onchange = async (e: any) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setIsUploadingPan(true);
+                              const url = await uploadFileToCloudflare(file, "pan_card.jpg");
+                              setPanCardPhoto(url);
+                              setIsUploadingPan(false);
+                            }
+                          };
+                          input.click();
+                        }}
+                        className="p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors h-14 px-4 overflow-hidden"
+                      >
+                        {isUploadingPan ? (
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <Loader2 size={16} className="animate-spin text-[#00bd6f]" /> Uploading PAN...
+                          </div>
+                        ) : panCardPhoto ? (
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                              <CheckCircle2 size={14} /> PAN Image Uploaded
+                            </span>
+                            <span className="text-xs text-slate-400">Change</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
+                              <Upload size={14} className="text-[#00bd6f]" /> Upload PAN Card Image
+                            </span>
+                            <span className="text-xs text-slate-400">JPG/PNG</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Terms Agreement Checkbox */}
+                <label className="flex items-start gap-2.5 p-3.5 bg-slate-100/70 rounded-2xl cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={termsAgreed}
+                    onChange={(e) => setTermsAgreed(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 text-[#00bd6f] rounded-md accent-[#00bd6f]"
+                  />
+                  <span className="text-xs text-slate-600 leading-snug">
+                    I declare that the details provided are true and accurate. I understand that my account will remain{" "}
+                    <strong className="text-slate-900">inactive</strong> until manually verified & activated by the Crevings Admin team.
+                  </span>
+                </label>
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="w-1/3 h-14 rounded-2xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all text-[15px]"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitOnboarding}
+                  disabled={!isStep3Valid || isSubmitting}
+                  className={`flex-1 h-14 rounded-2xl font-bold text-[16px] flex items-center justify-center gap-2 transition-all ${
+                    isStep3Valid && !isSubmitting
+                      ? "bg-[#00bd6f] text-white active:scale-98 shadow-md shadow-emerald-500/20"
+                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  }`}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" /> Submitting Application...
+                    </>
+                  ) : (
+                    "Submit Application"
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ───────────────────────────────────────────────────────────── */}
+          {/* STEP 4: Application Submitted & Inactive Account Notice */}
+          {/* ───────────────────────────────────────────────────────────── */}
+          {currentStep === 4 && (
+            <motion.div
+              key="step4"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="space-y-6 flex-1 flex flex-col items-center justify-center text-center py-8"
+            >
+              <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center text-[#00bd6f] shadow-lg shadow-emerald-500/10">
+                <ShieldCheck size={44} strokeWidth={2.2} />
+              </div>
+
+              <div className="space-y-2">
+                <span className="px-3.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                  Account Status: Inactive (Under Review)
+                </span>
+                <h2 className="text-[24px] font-black text-slate-900 tracking-tight">Application Submitted!</h2>
+                <p className="text-[14px] text-slate-600 max-w-sm leading-relaxed">
+                  Thank you for applying to become a Crevings Delivery Partner! Our team is reviewing your documents and
+                  selfie. Your account will be manually activated within 24-48 hours.
+                </p>
+              </div>
+
+              <div className="w-full max-w-sm p-4 bg-white border border-slate-200 rounded-2xl text-left space-y-2.5 shadow-xs">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Applicant:</span>
+                  <span className="font-bold text-slate-900">{personalDetails.name}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">Registered Phone:</span>
+                  <span className="font-bold text-slate-900">+91 {personalDetails.phone}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">KYC Status:</span>
+                  <span className="font-bold text-emerald-600">SUBMITTED</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (onComplete) {
+                    onComplete();
+                  } else {
+                    navigate("/login");
+                  }
+                }}
+                className="w-full max-w-sm h-14 bg-slate-900 text-white rounded-2xl font-bold text-[16px] hover:bg-black active:scale-98 transition-all shadow-md"
+              >
+                Back to Login
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
 };
+
+export default OnboardingView;

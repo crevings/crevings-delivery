@@ -68,6 +68,6 @@ export const logout = async () => {
   } catch {
     // Best-effort
   }
-  await post("/auth/logout").catch(() => {});
+  await post("/auth/revoke-sessions").catch(() => {});
   return { success: true };
 };
