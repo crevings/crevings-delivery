@@ -133,13 +133,13 @@ export const OrderCard: React.FC<OrderCardProps> = ({ order, onClick, onUpdateSt
               // no-op
             } else if (isPickedUp) {
               // Food picked up & OTP entered -> Deliver to Customer
-              openMapsNavigation(order.address, order.customer);
+              openMapsNavigation(order.customerCoordinates || order.address, order.customer, order.customerCoordinates);
             } else if (isArrivedAtRestaurant) {
               // Arrived at restaurant -> open order details to enter restaurant OTP
               onClick();
             } else {
               // Heading to restaurant -> navigate to outlet
-              openMapsNavigation(order.restaurantAddress, order.restaurantName);
+              openMapsNavigation(order.restaurantCoordinates || order.restaurantAddress, order.restaurantName, order.restaurantCoordinates);
             }
           }}
           className={`w-full h-[50px] rounded-[14px] font-bold text-[15px] tracking-wide flex items-center justify-center gap-2 transition-colors ${btnBg} ${!isCompleted ? 'text-white active:bg-opacity-90' : ''}`}

@@ -1,4 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  requestLocationAndGetPosition,
+  openDeviceLocationSettings,
+  LocationError,
+  isCapacitorNative
+} from '@/services/geolocation';
+import { openAppSettings } from '@/services/permissions';
+import { updateDriverLocation } from '@/api/partner';
+import { usePartnerStore } from '@/app/store';
 
 export interface LocationState {
   hasPermission: boolean;
@@ -6,185 +15,188 @@ export interface LocationState {
   longitude: number | null;
   errorMsg: string | null;
   isChecking: boolean;
+  isGpsOff: boolean;
 }
 
 export function useLocationManager(isLoggedIn: boolean) {
+  const isOnline = usePartnerStore((s) => s.isOnline);
   const [locationState, setLocationState] = useState<LocationState>({
-    hasPermission: true, // Default true to prevent flash, checked immediately
+    hasPermission: true, // Optimistic to avoid flash
     latitude: null,
     longitude: null,
     errorMsg: null,
     isChecking: true,
+    isGpsOff: false,
   });
 
-  const requestAndFetchLocation = useCallback(() => {
+  const lastSyncTimeRef = useRef<number>(0);
+  const lastCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Sync coordinates to backend when online / logged in
+  const maybeSyncLocationToBackend = useCallback(
+    async (lat: number, lng: number) => {
+      if (!isLoggedIn) return;
+      const now = Date.now();
+      // Sync at most once every 8 seconds, or if moved > 50 meters
+      const last = lastCoordsRef.current;
+      const timeDiff = now - lastSyncTimeRef.current;
+      const hasMoved = !last || Math.abs(last.lat - lat) > 0.0003 || Math.abs(last.lng - lng) > 0.0003;
+
+      if (timeDiff >= 8000 || (timeDiff >= 3000 && hasMoved)) {
+        lastSyncTimeRef.current = now;
+        lastCoordsRef.current = { lat, lng };
+        try {
+          await updateDriverLocation(lat, lng);
+        } catch (err: any) {
+          console.warn('[LocationManager] Failed to sync driver location to backend:', err?.message);
+        }
+      }
+    },
+    [isLoggedIn]
+  );
+
+  const requestAndFetchLocation = useCallback(async () => {
     setLocationState((prev) => ({ ...prev, isChecking: true }));
 
-    // 1. Try Capacitor Geolocation Plugin (For Native Android/iOS or Capacitor WebView)
     try {
-      const capGeo = (window as any).Capacitor?.Plugins?.Geolocation;
-      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.() && capGeo) {
-        capGeo
-          .requestPermissions()
-          .then((permResult: any) => {
-            if (permResult.location === 'granted' || permResult.coarseLocation === 'granted') {
-              return capGeo.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-            }
-            throw new Error('Location permission denied on device.');
-          })
-          .then((position: any) => {
-            setLocationState({
-              hasPermission: true,
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              errorMsg: null,
-              isChecking: false,
-            });
-          })
-          .catch((err: any) => {
-            setLocationState({
-              hasPermission: false,
-              latitude: null,
-              longitude: null,
-              errorMsg: err?.message || 'Location permission denied on device.',
-              isChecking: false,
-            });
-          });
-        return;
-      }
-    } catch (e: any) {
-      console.warn('Capacitor Geolocation check fallback to Web Geolocation API:', e?.message);
-    }
-
-    // 2. Web Browser Standard Geolocation API (HTML5 Geolocation)
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocationState({
-            hasPermission: true,
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            errorMsg: null,
-            isChecking: false,
-          });
-        },
-        (error) => {
-          let msg = 'Location access is required to receive delivery orders.';
-          if (error.code === error.PERMISSION_DENIED) {
-            msg = 'Location is blocked. Please tap the 🔒 lock / tune icon in your browser address bar, set Location to "Allow", and retry.';
-          } else if (error.code === error.POSITION_UNAVAILABLE) {
-            msg = 'Device GPS is turned off. Please turn on Location in your device quick settings.';
-          } else if (error.code === error.TIMEOUT) {
-            msg = 'Location request timed out. Please tap "Enable Device Location" again.';
-          }
-          setLocationState({
-            hasPermission: false,
-            latitude: null,
-            longitude: null,
-            errorMsg: msg,
-            isChecking: false,
-          });
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        }
-      );
-    } else {
+      const pos = await requestLocationAndGetPosition();
       setLocationState({
-        hasPermission: false,
+        hasPermission: true,
+        latitude: pos.lat,
+        longitude: pos.lng,
+        errorMsg: null,
+        isChecking: false,
+        isGpsOff: false,
+      });
+      maybeSyncLocationToBackend(pos.lat, pos.lng);
+    } catch (err: any) {
+      const isDenied = err instanceof LocationError && err.code === 1;
+      const isGpsOff = err instanceof LocationError && err.code === 4;
+
+      let msg = err?.message || 'Location access is required to receive delivery orders.';
+      if (isDenied) {
+        msg = isCapacitorNative()
+          ? 'Location permission is denied. Please enable location permission in app settings.'
+          : 'Location is blocked. Please tap the lock icon in your browser address bar and set Location to Allow.';
+      } else if (isGpsOff) {
+        msg = 'Device GPS is turned off. Please turn on Location in your device quick settings.';
+      }
+
+      setLocationState({
+        hasPermission: !isDenied,
         latitude: null,
         longitude: null,
-        errorMsg: 'Geolocation is not supported by your device or browser.',
+        errorMsg: msg,
         isChecking: false,
+        isGpsOff,
       });
     }
-  }, []);
+  }, [maybeSyncLocationToBackend]);
 
-  // Continuously check & monitor location
+  // Continuous monitoring & background watch
   useEffect(() => {
     if (!isLoggedIn) return;
-
-    // Check permission API directly if supported
-    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: 'geolocation' })
-        .then((permissionStatus) => {
-          if (permissionStatus.state === 'denied') {
-            setLocationState((prev) => ({
-              ...prev,
-              hasPermission: false,
-              isChecking: false,
-              errorMsg: 'Location permission is blocked. Please allow location in your browser settings.',
-            }));
-          }
-          permissionStatus.onchange = () => {
-            if (permissionStatus.state === 'granted') {
-              requestAndFetchLocation();
-            } else if (permissionStatus.state === 'denied') {
-              setLocationState((prev) => ({
-                ...prev,
-                hasPermission: false,
-                isChecking: false,
-                errorMsg: 'Location permission is blocked. Please allow location in your browser settings.',
-              }));
-            }
-          };
-        })
-        .catch(() => {
-          // Permissions API query not supported or failed
-        });
-    }
 
     // Initial check
     requestAndFetchLocation();
 
-    // Watch position continuously
-    let watchId: number | null = null;
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          setLocationState({
-            hasPermission: true,
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            errorMsg: null,
-            isChecking: false,
-          });
-        },
-        (error) => {
-          if (error.code === error.PERMISSION_DENIED) {
-            setLocationState({
-              hasPermission: false,
-              latitude: null,
-              longitude: null,
-              errorMsg: 'Location permission denied. Please enable location to continue working.',
-              isChecking: false,
-            });
-          }
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
-      );
-    }
+    let watchCallbackId: string | number | null = null;
+    let cancelled = false;
 
-    // Polling safety loop every 4 seconds if permission is not yet acquired
+    // Setup native / web watch
+    const startWatching = async () => {
+      if (isCapacitorNative()) {
+        try {
+          const { Geolocation } = await import('@capacitor/geolocation');
+          watchCallbackId = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 },
+            (position, err) => {
+              if (cancelled) return;
+              if (err) {
+                console.warn('[LocationManager] Watch position error:', err.message);
+                return;
+              }
+              if (position?.coords) {
+                const { latitude, longitude } = position.coords;
+                setLocationState((prev) => ({
+                  ...prev,
+                  hasPermission: true,
+                  latitude,
+                  longitude,
+                  errorMsg: null,
+                  isChecking: false,
+                  isGpsOff: false,
+                }));
+                maybeSyncLocationToBackend(latitude, longitude);
+              }
+            }
+          );
+        } catch (e: any) {
+          console.warn('[LocationManager] Capacitor watch error, falling back to standard watch:', e?.message);
+        }
+      }
+
+      // Web fallback watch
+      if (!watchCallbackId && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+        watchCallbackId = navigator.geolocation.watchPosition(
+          (position) => {
+            if (cancelled) return;
+            const { latitude, longitude } = position.coords;
+            setLocationState((prev) => ({
+              ...prev,
+              hasPermission: true,
+              latitude,
+              longitude,
+              errorMsg: null,
+              isChecking: false,
+              isGpsOff: false,
+            }));
+            maybeSyncLocationToBackend(latitude, longitude);
+          },
+          (error) => {
+            if (cancelled) return;
+            if (error.code === error.PERMISSION_DENIED) {
+              setLocationState((prev) => ({
+                ...prev,
+                hasPermission: false,
+                errorMsg: 'Location permission denied. Please allow location to continue working.',
+                isChecking: false,
+              }));
+            }
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
+        );
+      }
+    };
+
+    startWatching();
+
+    // Heartbeat safety poll every 6s when online or missing coordinates
     const pollInterval = setInterval(() => {
-      if (!locationState.hasPermission || locationState.latitude === null) {
+      if (!locationState.hasPermission || locationState.latitude === null || isOnline) {
         requestAndFetchLocation();
       }
-    }, 4000);
+    }, isOnline ? 6000 : 10000);
 
     return () => {
-      if (watchId !== null && typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-        navigator.geolocation.clearWatch(watchId);
-      }
+      cancelled = true;
       clearInterval(pollInterval);
+      if (watchCallbackId !== null) {
+        if (typeof watchCallbackId === 'string') {
+          import('@capacitor/geolocation').then(({ Geolocation }) => {
+            Geolocation.clearWatch({ id: watchCallbackId as string }).catch(() => {});
+          });
+        } else if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+          navigator.geolocation.clearWatch(watchCallbackId as number);
+        }
+      }
     };
-  }, [isLoggedIn, requestAndFetchLocation, locationState.hasPermission, locationState.latitude]);
+  }, [isLoggedIn, isOnline, requestAndFetchLocation, maybeSyncLocationToBackend]);
 
   return {
     ...locationState,
     retryLocationAccess: requestAndFetchLocation,
+    promptEnableGps: openDeviceLocationSettings,
+    openAppSettings,
   };
 }

@@ -57,50 +57,66 @@ export const mapDriverStatus = (status?: string): string => {
  * Map a raw backend active-order document into the app's Order shape, so the
  * dashboard cards and the Orders tab can render backend-assigned trips.
  */
-export const mapActiveOrder = (raw: any): Order => ({
-  id: raw.orderId,
-  orderId: raw.orderId,
-  displayOrderNumber: raw.displayOrderNumber,
-  displayOrderId: raw.displayOrderId,
-  customer: raw.customerDetails?.name || "Customer",
-  type: "Delivery",
-  channel: raw.channel || "Crevings",
-  items:
-    (raw.items || []).map((it: any) => `${it.quantity} x ${it.name}`).join(", ") ||
-    "Delivery Order",
-  itemList: (raw.items || []).map((it: any) => ({
-    name: it.name,
-    quantity: it.quantity,
-    price: it.price,
-  })),
-  total: String(raw.total ?? "0"),
-  status: mapDriverStatus(raw.status),
-  time: raw.dispatchTime
-    ? new Date(raw.dispatchTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : raw.createdAt
-      ? new Date(raw.createdAt).toLocaleString([], {
-          day: "2-digit",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "--",
-  paymentStatus: raw.payment?.status === "Paid" ? "Paid" : "Unpaid",
-  paymentMethod: raw.payment?.method || "",
-  address: raw.customerDetails?.address || "",
-  restaurantName: raw.restaurantName || undefined,
-  restaurantAddress: raw.restaurantAddress || "",
-  restaurantPhone: raw.restaurantPhone || "",
-  deliveryFee: Number(raw.deliveryFee ?? 0),
-  driverEarnings: Number(raw.driverEarnings ?? 0),
-  customerType: "Regular",
-  phone: raw.customerDetails?.phone || "",
-  customerNote: raw.customerDetails?.note || raw.deliveryNotes || "",
-  offer: raw.appliedOffer || "",
-  subtotal: raw.subtotal || 0,
-  tax: raw.tax || 0,
-  discount: raw.discount || 0,
-});
+export const mapActiveOrder = (raw: any): Order => {
+  const restaurantCoordinates =
+    raw.restaurantCoordinates ||
+    (raw.restaurant?.coordinates ? raw.restaurant.coordinates : null) ||
+    null;
+
+  const customerCoordinates =
+    raw.customerCoordinates ||
+    raw.deliveryCoordinates ||
+    (raw.customerDetails?.coordinates ? raw.customerDetails.coordinates : null) ||
+    (raw.customer?.coordinates ? raw.customer.coordinates : null) ||
+    null;
+
+  return {
+    id: raw.orderId,
+    orderId: raw.orderId,
+    displayOrderNumber: raw.displayOrderNumber,
+    displayOrderId: raw.displayOrderId,
+    customer: raw.customerDetails?.name || raw.customer?.name || "Customer",
+    type: "Delivery",
+    channel: raw.channel || "Crevings",
+    items:
+      (raw.items || []).map((it: any) => `${it.quantity} x ${it.name}`).join(", ") ||
+      "Delivery Order",
+    itemList: (raw.items || []).map((it: any) => ({
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+    })),
+    total: String(raw.total ?? "0"),
+    status: mapDriverStatus(raw.status),
+    time: raw.dispatchTime
+      ? new Date(raw.dispatchTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : raw.createdAt
+        ? new Date(raw.createdAt).toLocaleString([], {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "--",
+    paymentStatus: raw.payment?.status === "Paid" || raw.totals?.paymentStatus === "Paid" ? "Paid" : "Unpaid",
+    paymentMethod: raw.payment?.method || raw.totals?.paymentMethod || "",
+    address: raw.customerDetails?.address || raw.customer?.address || "",
+    restaurantName: raw.restaurantName || raw.restaurant?.name || undefined,
+    restaurantAddress: raw.restaurantAddress || raw.restaurant?.address || "",
+    restaurantPhone: raw.restaurantPhone || raw.restaurant?.phone || "",
+    restaurantCoordinates,
+    customerCoordinates,
+    deliveryFee: Number(raw.deliveryFee ?? raw.totals?.deliveryFee ?? 0),
+    driverEarnings: Number(raw.driverEarnings ?? 0),
+    customerType: "Regular",
+    phone: raw.customerDetails?.phone || raw.customer?.phone || "",
+    customerNote: raw.customerDetails?.note || raw.deliveryNotes || raw.notes || "",
+    offer: raw.appliedOffer || "",
+    subtotal: raw.subtotal || raw.totals?.subtotal || 0,
+    tax: raw.tax || raw.totals?.tax || 0,
+    discount: raw.discount || raw.totals?.discount || 0,
+  };
+};
 
 /**
  * Driver order history — `GET /delivery/orders/history?limit=&cursor=`
@@ -132,40 +148,56 @@ export const useOrderHistory = (limit: number = 20, cursor?: string) => {
  * Map a raw backend available-order payload into the app's Order shape
  * (single source of truth — previously inlined in Dashboard's poll loop).
  */
-export const mapAvailableOrder = (raw: any): Order => ({
-  id: raw.orderId,
-  orderId: raw.orderId,
-  displayOrderNumber: raw.displayOrderNumber,
-  displayOrderId: raw.displayOrderId,
-  customer: raw.customerDetails?.name || "Customer",
-  type: "Customer Tips",
-  channel: "Direct",
-  items: `${raw.items?.length || 1} Items`,
-  itemList: (raw.items || []).map((it: any) => ({
-    name: it.name,
-    quantity: it.quantity,
-    price: it.price,
-  })),
-  paymentStatus: raw.payment?.status === "Paid" ? "Paid" : (raw.payment?.method === "COD" || raw.payment?.method === "Cash" ? "Unpaid" : (raw.payment?.status || "Paid")),
-  paymentMethod: raw.payment?.method || (raw.isCOD ? "COD" : "Online"),
-  address: raw.customerDetails?.address || "Customer Address",
-  restaurantName: raw.restaurantName || raw.branchName || undefined,
-  restaurantAddress: raw.restaurantAddress || "",
-  restaurantPhone: raw.restaurantPhone || "",
-  pickupDistanceKm: raw.pickupDistanceKm || undefined,
-  deliveryFee: Number(raw.deliveryFee ?? 30),
-  driverEarnings: Number(raw.deliveryFee ?? raw.driverEarnings ?? 30),
-  subtotal: raw.subtotal || 0,
-  tax: raw.tax || 0,
-  discount: raw.discount || 0,
-  total: String(raw.total || "0"),
-  status: "Incoming",
-  time: "--",
-  customerType: "Regular",
-  phone: raw.customerDetails?.phone || "+91 98765 43210",
-  customerNote: "",
-  offer: raw.appliedOffer || "",
-});
+export const mapAvailableOrder = (raw: any): Order => {
+  const restaurantCoordinates =
+    raw.restaurantCoordinates ||
+    (raw.restaurant?.coordinates ? raw.restaurant.coordinates : null) ||
+    null;
+
+  const customerCoordinates =
+    raw.customerCoordinates ||
+    raw.deliveryCoordinates ||
+    (raw.customerDetails?.coordinates ? raw.customerDetails.coordinates : null) ||
+    (raw.customer?.coordinates ? raw.customer.coordinates : null) ||
+    null;
+
+  return {
+    id: raw.orderId,
+    orderId: raw.orderId,
+    displayOrderNumber: raw.displayOrderNumber,
+    displayOrderId: raw.displayOrderId,
+    customer: raw.customerDetails?.name || raw.customer?.name || "Customer",
+    type: "Customer Tips",
+    channel: "Direct",
+    items: `${raw.items?.length || 1} Items`,
+    itemList: (raw.items || []).map((it: any) => ({
+      name: it.name,
+      quantity: it.quantity,
+      price: it.price,
+    })),
+    paymentStatus: raw.payment?.status === "Paid" ? "Paid" : (raw.payment?.method === "COD" || raw.payment?.method === "Cash" ? "Unpaid" : (raw.payment?.status || "Paid")),
+    paymentMethod: raw.payment?.method || (raw.isCOD ? "COD" : "Online"),
+    address: raw.customerDetails?.address || raw.customer?.address || "Customer Address",
+    restaurantName: raw.restaurantName || raw.branchName || raw.restaurant?.name || undefined,
+    restaurantAddress: raw.restaurantAddress || raw.restaurant?.address || "",
+    restaurantPhone: raw.restaurantPhone || raw.restaurant?.phone || "",
+    restaurantCoordinates,
+    customerCoordinates,
+    pickupDistanceKm: raw.pickupDistanceKm || undefined,
+    deliveryFee: Number(raw.deliveryFee ?? 30),
+    driverEarnings: Number(raw.deliveryFee ?? raw.driverEarnings ?? 30),
+    subtotal: raw.subtotal || 0,
+    tax: raw.tax || 0,
+    discount: raw.discount || 0,
+    total: String(raw.total || "0"),
+    status: "Incoming",
+    time: "--",
+    customerType: "Regular",
+    phone: raw.customerDetails?.phone || raw.customer?.phone || "+91 98765 43210",
+    customerNote: "",
+    offer: raw.appliedOffer || "",
+  };
+};
 
 /**
  * Driver availability feed — SWR-driven replacement for the raw fetch poll.

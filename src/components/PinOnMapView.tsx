@@ -1,16 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Search, Crosshair, Home, Briefcase } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, MapPin, Search, Crosshair, Home, Briefcase, Loader2 } from 'lucide-react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import { requestLocationAndGetPosition } from '@/services/geolocation';
 
 interface PinOnMapViewProps {
   onBack: () => void;
   initialAddress?: string;
 }
 
-// Center tracker component
-function MapCenterTracker({ onMapMove }: { onMapMove: (center: { lat: number; lng: number }) => void }) {
+// Controller component to move map programmatically
+function MapController({
+  center,
+  onMapMove,
+}: {
+  center: { lat: number; lng: number };
+  onMapMove: (center: { lat: number; lng: number }) => void;
+}) {
   const map = useMap();
+  const prevCenterRef = useRef(center);
+
+  useEffect(() => {
+    if (
+      Math.abs(prevCenterRef.current.lat - center.lat) > 0.0001 ||
+      Math.abs(prevCenterRef.current.lng - center.lng) > 0.0001
+    ) {
+      map.flyTo([center.lat, center.lng], 16);
+      prevCenterRef.current = center;
+    }
+  }, [center, map]);
+
   useEffect(() => {
     const handleMoveEnd = () => {
       onMapMove(map.getCenter());
@@ -20,6 +39,7 @@ function MapCenterTracker({ onMapMove }: { onMapMove: (center: { lat: number; ln
       map.off('moveend', handleMoveEnd);
     };
   }, [map, onMapMove]);
+
   return null;
 }
 
@@ -27,15 +47,33 @@ export const PinOnMapView: React.FC<PinOnMapViewProps> = ({ onBack, initialAddre
   const [address, setAddress] = useState(initialAddress || '123 Culinary Street, Food District, Mumbai');
   const [showDetailsSheet, setShowDetailsSheet] = useState(false);
   const [saveAs, setSaveAs] = useState<'home' | 'work' | 'other' | null>(null);
-  
+  const [isLocating, setIsLocating] = useState(false);
+
   // Default center at roughly Mumbai
-  const [center, setCenter] = useState({ lat: 19.0760, lng: 72.8777 });
+  const [center, setCenter] = useState({ lat: 19.076, lng: 72.8777 });
 
   const handleMapMove = (newCenter: { lat: number; lng: number }) => {
     setCenter(newCenter);
-    // In a real app we'd reverse-geocode here
     setAddress(`Location nearby (${newCenter.lat.toFixed(4)}, ${newCenter.lng.toFixed(4)})`);
   };
+
+  const handleLocateMe = async () => {
+    setIsLocating(true);
+    try {
+      const pos = await requestLocationAndGetPosition();
+      setCenter({ lat: pos.lat, lng: pos.lng });
+      setAddress(`GPS Location (${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})`);
+    } catch (err: any) {
+      alert(err?.message || 'Could not fetch device location');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  // Initial GPS locate on mount
+  useEffect(() => {
+    handleLocateMe();
+  }, []);
 
   return (
     <div className="fixed inset-0 bg-slate-50 z-50 flex flex-col font-sans">
@@ -49,7 +87,7 @@ export const PinOnMapView: React.FC<PinOnMapViewProps> = ({ onBack, initialAddre
 
       {/* Search Bar (Floating) */}
       <div className="absolute top-[72px] left-4 right-4 z-20">
-        <div className="bg-[#FFFFFF] rounded-xl flex items-center px-4 h-12 border border-slate-200">
+        <div className="bg-[#FFFFFF] rounded-xl flex items-center px-4 h-12 border border-slate-200 shadow-sm">
           <Search size={20} className="text-slate-400 mr-3" />
           <input
             type="text"
@@ -65,7 +103,7 @@ export const PinOnMapView: React.FC<PinOnMapViewProps> = ({ onBack, initialAddre
       <div className="flex-1 relative bg-slate-200 overflow-hidden z-0">
         <MapContainer 
           center={[center.lat, center.lng]} 
-          zoom={14} 
+          zoom={15} 
           zoomControl={false}
           className="w-full h-full"
         >
@@ -73,7 +111,7 @@ export const PinOnMapView: React.FC<PinOnMapViewProps> = ({ onBack, initialAddre
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           />
-          <MapCenterTracker onMapMove={handleMapMove} />
+          <MapController center={center} onMapMove={handleMapMove} />
         </MapContainer>
 
         {/* Center Pin Overlay */}
@@ -86,8 +124,12 @@ export const PinOnMapView: React.FC<PinOnMapViewProps> = ({ onBack, initialAddre
         </div>
 
         {/* Locate Me Button */}
-        <button className="absolute bottom-6 right-4 w-12 h-12 bg-[#FFFFFF] rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.1)] flex items-center justify-center text-slate-700 border border-slate-100 active:scale-95 transition-transform z-[400]">
-          <Crosshair size={24} />
+        <button
+          onClick={handleLocateMe}
+          disabled={isLocating}
+          className="absolute bottom-6 right-4 w-12 h-12 bg-[#FFFFFF] rounded-full shadow-[0_4px_12px_rgba(0,0,0,0.15)] flex items-center justify-center text-slate-700 border border-slate-100 active:scale-95 transition-transform z-[400] disabled:opacity-60"
+        >
+          {isLocating ? <Loader2 size={22} className="animate-spin text-[#00bd6f]" /> : <Crosshair size={24} className="text-[#00bd6f]" />}
         </button>
       </div>
 
@@ -182,4 +224,3 @@ export const PinOnMapView: React.FC<PinOnMapViewProps> = ({ onBack, initialAddre
     </div>
   );
 };
-

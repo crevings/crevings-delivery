@@ -1,8 +1,9 @@
 import React from 'react';
-import { Navigation, MapPinOff, AlertTriangle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Navigation, MapPinOff, AlertTriangle, RefreshCw, ShieldCheck, Settings, Power } from 'lucide-react';
 import { useLocationManager } from '@/hooks/useLocationManager';
 import { useAuthStore } from '@/app/store';
 import { useLocation } from 'react-router-dom';
+import { isCapacitorNative } from '@/services/geolocation';
 
 export function LocationPermissionGate({ children }: { children: React.ReactNode }) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
@@ -15,7 +16,10 @@ export function LocationPermissionGate({ children }: { children: React.ReactNode
     longitude,
     errorMsg,
     isChecking,
+    isGpsOff,
     retryLocationAccess,
+    promptEnableGps,
+    openAppSettings,
   } = useLocationManager(isLoggedIn && !isPublicPage);
 
   // If on login/onboarding or not logged in, pass through without blocking
@@ -42,10 +46,12 @@ export function LocationPermissionGate({ children }: { children: React.ReactNode
 
         {/* Heading & Context */}
         <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-2">
-          Location Access Required
+          {isGpsOff ? 'Device GPS Is Turned Off' : 'Location Access Required'}
         </h1>
         <p className="text-slate-500 text-sm max-w-xs mb-6 leading-relaxed">
-          To receive nearby food orders, navigate to restaurants, and track active deliveries, please turn on GPS location on your device.
+          {isGpsOff
+            ? 'Please turn on GPS / Location Services on your device to receive delivery orders and navigate trips.'
+            : 'To receive nearby food orders, navigate to restaurants, and track active deliveries, please enable location.'}
         </p>
 
         {/* Status Error Note */}
@@ -56,25 +62,49 @@ export function LocationPermissionGate({ children }: { children: React.ReactNode
           </div>
         )}
 
-        {/* Action Button */}
+        {/* Action Buttons */}
         <div className="w-full max-w-xs space-y-3">
-          <button
-            onClick={() => retryLocationAccess()}
-            disabled={isChecking}
-            className="w-full h-13 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold text-sm rounded-2xl shadow-lg shadow-blue-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {isChecking ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Checking Location...</span>
-              </>
-            ) : (
-              <>
-                <Navigation className="w-4 h-4 fill-current" />
-                <span>Enable Device Location</span>
-              </>
-            )}
-          </button>
+          {isGpsOff ? (
+            <button
+              onClick={async () => {
+                await promptEnableGps();
+                await retryLocationAccess();
+              }}
+              disabled={isChecking}
+              className="w-full h-13 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Power className="w-4 h-4" />
+              <span>Turn On Device GPS</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => retryLocationAccess()}
+              disabled={isChecking}
+              className="w-full h-13 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-bold text-sm rounded-2xl shadow-lg shadow-blue-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isChecking ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Checking Location...</span>
+                </>
+              ) : (
+                <>
+                  <Navigation className="w-4 h-4 fill-current" />
+                  <span>Enable Device Location</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {(!hasPermission || errorMsg?.toLowerCase().includes('denied')) && isCapacitorNative() && (
+            <button
+              onClick={() => openAppSettings()}
+              className="w-full h-12 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm rounded-2xl active:scale-98 transition-all flex items-center justify-center gap-2"
+            >
+              <Settings className="w-4 h-4 text-slate-600" />
+              <span>Open App Settings</span>
+            </button>
+          )}
         </div>
 
         {/* Troubleshooting Instructions */}
@@ -84,9 +114,13 @@ export function LocationPermissionGate({ children }: { children: React.ReactNode
             How to allow location:
           </h4>
           <ol className="text-[11px] text-slate-500 space-y-1.5 list-decimal pl-4 leading-relaxed font-medium">
-            <li>If a prompt appeared, tap <strong>Allow</strong>.</li>
-            <li>If blocked, tap the <strong>🔒 Lock / Tune icon</strong> in your browser address bar.</li>
-            <li>Toggle <strong>Location</strong> to <strong>On / Allow</strong> and tap the button above.</li>
+            <li>If a system prompt appeared, tap <strong>Allow</strong>.</li>
+            <li>Ensure device <strong>Location / GPS</strong> is turned ON in Quick Settings.</li>
+            {isCapacitorNative() ? (
+              <li>If blocked, tap <strong>Open App Settings</strong> above and enable Location permission.</li>
+            ) : (
+              <li>If blocked, tap the <strong>🔒 Lock icon</strong> in browser address bar and enable Location.</li>
+            )}
           </ol>
         </div>
       </div>

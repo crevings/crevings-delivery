@@ -354,7 +354,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </button>
             )}
             <button 
-              onClick={() => openMapsNavigation(order.restaurantAddress, order.restaurantName)}
+              onClick={() => openMapsNavigation(order.restaurantCoordinates || order.restaurantAddress, order.restaurantName, order.restaurantCoordinates)}
               className="flex-1 h-12 bg-blue-50 text-blue-600 font-bold rounded-xl flex items-center justify-center gap-2 active:bg-blue-100 transition-colors"
             >
               <Navigation size={18} className="rotate-45" />
@@ -392,7 +392,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               <MessageCircle size={20} />
             </button>
             <button 
-              onClick={() => openMapsNavigation(order.address, order.customer)}
+              onClick={() => openMapsNavigation(order.customerCoordinates || order.address, order.customer, order.customerCoordinates)}
               className="h-12 px-4 bg-blue-50 text-blue-600 font-bold rounded-xl flex items-center justify-center gap-2 active:bg-blue-100 transition-colors flex-1"
             >
               <Navigation size={18} className="rotate-45" />

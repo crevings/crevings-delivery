@@ -39,6 +39,10 @@ export interface Order {
   restaurantAddress?: string;
   /** Pickup restaurant phone, when known (trip screen Call button). */
   restaurantPhone?: string;
+  /** Pickup restaurant coordinates { lat, lng } for accurate turn-by-turn map navigation. */
+  restaurantCoordinates?: { lat: number; lng: number } | null;
+  /** Customer delivery coordinates { lat, lng } for accurate turn-by-turn map navigation. */
+  customerCoordinates?: { lat: number; lng: number } | null;
   /** Distance from the driver to the pickup restaurant, in km (dispatch popup). */
   pickupDistanceKm?: string;
   /** Delivery fee the customer paid — the driver's earnings for this trip. */
