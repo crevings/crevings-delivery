@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   LogOut,
   ChevronRight,
@@ -15,14 +15,17 @@ import {
   User,
   Settings,
   ShoppingBag,
-  Receipt
+  Receipt,
+  Camera,
+  Loader2
 } from 'lucide-react';
 import { Tab } from '@/types';
 import { useAuth } from '@/app/providers';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/app/store';
-import { usePartnerProfile } from '@/api/profile';
+import { usePartnerProfile, updatePartnerProfile } from '@/api/profile';
 import { useEarningsSummary } from '@/api/earnings';
+import { BASE_URL } from '@/api/fetcher';
 
 interface ProfileViewProps {
   onNavigateToTab?: (tab: Tab) => void;
@@ -34,11 +37,13 @@ const formatINR = (value?: number) =>
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateToTab, onLogout }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { logout } = useAuth();
   const navigate = useNavigate();
   const partnerEmail = useAuthStore(s => s.partnerEmail);
   const partnerId = useAuthStore(s => s.partnerId);
-  const { profile } = usePartnerProfile();
+  const { profile, mutate } = usePartnerProfile();
   const { earnings } = useEarningsSummary();
 
   const displayName = profile?.name || 'Partner';
@@ -48,6 +53,58 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateToTab, onLog
     : profile?.vehicleType || 'Not set';
   const totalTrips = earnings?.allTime?.trips;
   const balance = earnings?.balance;
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingAvatar(true);
+    const oldAvatar = profile?.avatar;
+
+    try {
+      // 1. Upload new image to Cloudflare CDN
+      const formData = new FormData();
+      formData.append("file", file, file.name || "avatar.jpg");
+
+      const res = await fetch(`${BASE_URL}/upload/image/public`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to upload image to Cloudflare");
+      }
+
+      const json = await res.json();
+      const newUrl = json?.data?.url || json?.url;
+      if (!newUrl || typeof newUrl !== "string") {
+        throw new Error("Invalid response from image upload");
+      }
+
+      // 2. Save new avatar URL to delivery partner profile in backend
+      await updatePartnerProfile({ avatar: newUrl });
+      await mutate();
+
+      // 3. Delete previous avatar from Cloudflare if it existed
+      if (oldAvatar && oldAvatar !== newUrl && oldAvatar.startsWith("http")) {
+        fetch(`${BASE_URL}/upload/image/public`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: oldAvatar }),
+        }).catch((err) => {
+          console.warn("Could not delete old avatar from Cloudflare:", err);
+        });
+      }
+    } catch (err: any) {
+      console.error("Avatar upload failed:", err);
+      alert(err.message || "Failed to update profile photo");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
 
   const handleNavigate = (tab: Tab, routePath?: string) => {
     if (routePath) {
@@ -86,10 +143,37 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateToTab, onLog
         {/* Profile Card */}
         <div className="px-5 mt-4 relative z-10">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col justify-center items-center text-center shadow-sm">
-            <div className="relative mb-3">
-              <div className="w-[80px] h-[80px] rounded-full overflow-hidden border-2 border-blue-500/20">
-                <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?q=80&w=200&auto=format&fit=crop" className="w-full h-full object-cover" alt="Profile" />
+            <div className="relative mb-3 group">
+              <div className="w-[84px] h-[84px] rounded-full overflow-hidden border-2 border-blue-500/30 relative bg-slate-100 shadow-inner">
+                {profile?.avatar ? (
+                  <img src={profile.avatar} className="w-full h-full object-cover" alt="Profile" />
+                ) : (
+                  <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <User size={38} />
+                  </div>
+                )}
+                {isUploadingAvatar && (
+                  <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex items-center justify-center text-white">
+                    <Loader2 size={24} className="animate-spin" />
+                  </div>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center shadow-md border-2 border-white transition-transform active:scale-90 cursor-pointer"
+                title="Change Profile Photo"
+              >
+                <Camera size={15} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
             </div>
 
             <h2 className="text-[20px] font-bold text-slate-900 mb-1">{displayName}</h2>
@@ -160,16 +244,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateToTab, onLog
                   </div>
                   <ChevronRight size={18} className="text-slate-300" />
                 </button>
-                <button onClick={() => handleNavigate(Tab.VEHICLE_DETAILS, '/profile/vehicle')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-500"><Bike size={20} /></div>
-                    <div className="text-left">
-                      <p className="text-[14px] font-medium text-slate-900">Vehicle</p>
-                      <p className="text-[12px] text-slate-500">{vehicle}</p>
-                    </div>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
                 <button onClick={() => handleNavigate(Tab.PERSONAL_DOCUMENTS, '/profile/documents')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 border-b border-slate-100 transition-colors">
                   <div className="flex items-center gap-4">
                     <div className="text-slate-500"><FileText size={20} /></div>
@@ -177,59 +251,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ onNavigateToTab, onLog
                       <p className="text-[14px] font-medium text-slate-900">Personal Documents</p>
                       <p className="text-[12px] text-slate-500">Aadhar, PAN & License verification</p>
                     </div>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
-                <button onClick={() => handleNavigate(Tab.INVOICES, '/invoices')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-500"><Receipt size={20} /></div>
-                    <div className="text-left">
-                      <p className="text-[14px] font-medium text-slate-900">Invoices & Statements</p>
-                      <p className="text-[12px] text-slate-500">Download payout receipts</p>
-                    </div>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-[14px] font-bold text-slate-900 px-1 mb-2 pt-2">Partner Store & Perks</h3>
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <button onClick={() => handleNavigate(Tab.PARTNER_STORE, '/store')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-500"><ShoppingBag size={20} /></div>
-                    <div className="text-left">
-                      <p className="text-[14px] font-medium text-slate-900">Partner Gear Store</p>
-                      <p className="text-[12px] text-slate-500">T-shirts, bags, helmets & raincoats</p>
-                    </div>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-[14px] font-bold text-slate-900 px-1 mb-2 pt-2">Support & Learning</h3>
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <button onClick={() => handleNavigate(Tab.SUPPORT, '/support')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-500"><Phone size={20} /></div>
-                    <p className="text-[14px] font-medium text-slate-900">Partner Support & Help</p>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
-                <button onClick={() => handleNavigate(Tab.CREVINGS_STUDIO, '/studio')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-500"><Award size={20} /></div>
-                    <p className="text-[14px] font-medium text-slate-900">Crevings Studio (Training)</p>
-                  </div>
-                  <ChevronRight size={18} className="text-slate-300" />
-                </button>
-                <button onClick={() => handleNavigate(Tab.CREVINGS_LEGAL, '/legal')} className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="text-slate-500"><FileText size={20} /></div>
-                    <p className="text-[14px] font-medium text-slate-900">Terms & Policies</p>
                   </div>
                   <ChevronRight size={18} className="text-slate-300" />
                 </button>

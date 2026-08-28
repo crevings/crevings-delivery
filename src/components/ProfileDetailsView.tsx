@@ -22,41 +22,43 @@ export const ProfileDetailsView: React.FC<ProfileDetailsViewProps> = ({ onBack }
   const { profile, isLoading, mutate } = usePartnerProfile();
   const partnerId = useAuthStore(s => s.partnerId);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<UpdateProfileData>({
-    name: '',
-    phone: '',
-    phoneVerified: false,
-    dateOfBirth: '',
-    emergencyContact: {
-      name: '',
-      phone: '',
-      relationship: '',
-    },
-    vehicleType: 'Bike',
-    vehicleNumber: '',
-    licenseNumber: '',
-  });
+
+  // Helper to build form data from a profile object
+  const buildFormData = (p: NonNullable<typeof profile>): UpdateProfileData => {
+    const dob = p.dateOfBirth ? new Date(p.dateOfBirth).toISOString().split('T')[0] : '';
+    return {
+      name: p.name || '',
+      phone: p.phone || '',
+      phoneVerified: p.phoneVerified || false,
+      dateOfBirth: dob,
+      emergencyContact: {
+        name: p.emergencyContact?.name || '',
+        phone: p.emergencyContact?.phone || '',
+        relationship: p.emergencyContact?.relationship || '',
+      },
+      vehicleType: (p.vehicleType as UpdateProfileData['vehicleType']) || 'Bike',
+      vehicleNumber: p.vehicleNumber || '',
+      licenseNumber: p.licenseNumber || '',
+    };
+  };
+
+  // Initialize form with profile data if it's already loaded (e.g. SWR
+  // cache).  Falls back to empty strings on first render if profile is
+  // still loading.
+  const [formData, setFormData] = useState<UpdateProfileData>(() =>
+    profile ? buildFormData(profile) : {
+      name: '', phone: '', phoneVerified: false, dateOfBirth: '',
+      emergencyContact: { name: '', phone: '', relationship: '' },
+      vehicleType: 'Bike', vehicleNumber: '', licenseNumber: '',
+    }
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Populate form when profile loads
+  // Sync form when profile loads or changes (handles async SWR fetch)
   useEffect(() => {
     if (profile) {
-      const dob = profile.dateOfBirth ? new Date(profile.dateOfBirth).toISOString().split('T')[0] : '';
-      setFormData({
-        name: profile.name || '',
-        phone: profile.phone || '',
-        phoneVerified: profile.phoneVerified || false,
-        dateOfBirth: dob,
-        emergencyContact: {
-          name: profile.emergencyContact?.name || '',
-          phone: profile.emergencyContact?.phone || '',
-          relationship: profile.emergencyContact?.relationship || '',
-        },
-        vehicleType: (profile.vehicleType as UpdateProfileData['vehicleType']) || 'Bike',
-        vehicleNumber: profile.vehicleNumber || '',
-        licenseNumber: profile.licenseNumber || '',
-      });
+      setFormData(buildFormData(profile));
     }
   }, [profile]);
 

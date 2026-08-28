@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ArrowLeft, MoreVertical, Plus, ShieldCheck, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { usePartnerProfile, updatePartnerProfile } from '@/api/profile';
 
 interface BankAccountViewProps {
   onBack?: () => void;
@@ -14,6 +15,7 @@ interface BankAccount {
   ifscCode: string;
   upiId?: string;
   isPrimary: boolean;
+  verified?: boolean;
 }
 
 export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
@@ -23,16 +25,30 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
     else if (window.history.length > 1) navigate(-1);
     else navigate('/');
   };
-  const [accounts, setAccounts] = useState<BankAccount[]>([
-    { id: 1, bankName: 'HDFC Bank', holderName: 'Amit Sharma', accountNumber: '123456784821', ifscCode: 'HDFC0001234', upiId: 'amitsharma@okhdfcbank', isPrimary: true },
-    { id: 2, bankName: 'ICICI Bank', holderName: 'Amit Sharma', accountNumber: '987654329012', ifscCode: 'ICIC0009876', upiId: 'amitsharma@icici', isPrimary: false }
-  ]);
+
+  const { profile, isLoading, mutate } = usePartnerProfile();
+
+  const accounts: BankAccount[] = useMemo(() => {
+    if (!profile?.bankAccount?.accountNumber) return [];
+    return [
+      {
+        id: 1,
+        bankName: profile.bankAccount.ifsc?.slice(0, 4) ? `${profile.bankAccount.ifsc.slice(0, 4).toUpperCase()} Bank` : 'Primary Bank Account',
+        holderName: profile.bankAccount.accountHolderName || profile.name || 'Account Holder',
+        accountNumber: profile.bankAccount.accountNumber,
+        ifscCode: profile.bankAccount.ifsc || '',
+        isPrimary: true,
+        verified: profile.bankAccount.verified || false,
+      }
+    ];
+  }, [profile]);
 
   const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   
-  const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     bankName: '',
     holderName: '',
@@ -44,14 +60,20 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleOpenAdd = () => {
-    setEditingId(null);
-    setFormData({ bankName: '', holderName: '', accountNumber: '', confirmAccountNumber: '', ifscCode: '', upiId: '' });
+    setFormData({
+      bankName: '',
+      holderName: profile?.name || '',
+      accountNumber: '',
+      confirmAccountNumber: '',
+      ifscCode: '',
+      upiId: ''
+    });
     setErrors({});
+    setSaveError(null);
     setShowAddModal(true);
   };
 
   const handleOpenEdit = (account: BankAccount) => {
-    setEditingId(account.id);
     setFormData({
       bankName: account.bankName,
       holderName: account.holderName,
@@ -61,6 +83,7 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
       upiId: account.upiId || ''
     });
     setErrors({});
+    setSaveError(null);
     setActiveMenuId(null);
     setShowAddModal(true);
   };
@@ -70,21 +93,23 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
     setActiveMenuId(null);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (showDeleteConfirm !== null) {
-      setAccounts(accounts.filter(a => a.id !== showDeleteConfirm));
+      await updatePartnerProfile({
+        bankAccount: {
+          accountHolderName: '',
+          accountNumber: '',
+          ifsc: '',
+          verified: false
+        }
+      });
+      await mutate();
       setShowDeleteConfirm(null);
     }
   };
 
-  const handleSetPrimary = (id: number) => {
-    setAccounts(accounts.map(a => ({ ...a, isPrimary: a.id === id })));
-    setActiveMenuId(null);
-  };
-
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    if (!formData.bankName.trim()) newErrors.bankName = 'Bank Name is required';
     if (!formData.holderName.trim()) newErrors.holderName = 'Account Holder Name is required';
     if (!formData.accountNumber.trim()) newErrors.accountNumber = 'Account Number is required';
     if (!formData.confirmAccountNumber.trim()) newErrors.confirmAccountNumber = 'Please re-enter account number';
@@ -93,37 +118,33 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
     }
     if (!formData.ifscCode.trim()) {
       newErrors.ifscCode = 'IFSC Code is required';
-    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.ifscCode.toUpperCase())) {
-      newErrors.ifscCode = 'Invalid IFSC Code format';
+    } else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.ifscCode.toUpperCase().trim())) {
+      newErrors.ifscCode = 'Invalid IFSC Code format (e.g. HDFC0001234)';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = () => {
-    if (validateForm()) {
-      if (editingId !== null) {
-        setAccounts(accounts.map(a => a.id === editingId ? {
-          ...a,
-          bankName: formData.bankName,
-          holderName: formData.holderName,
-          accountNumber: formData.accountNumber,
-          ifscCode: formData.ifscCode.toUpperCase(),
-          upiId: formData.upiId
-        } : a));
-      } else {
-        setAccounts([...accounts, {
-          id: Date.now(),
-          bankName: formData.bankName,
-          holderName: formData.holderName,
-          accountNumber: formData.accountNumber,
-          ifscCode: formData.ifscCode.toUpperCase(),
-          upiId: formData.upiId,
-          isPrimary: accounts.length === 0
-        }]);
-      }
+  const handleSaveAccount = async () => {
+    if (!validateForm()) return;
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      await updatePartnerProfile({
+        bankAccount: {
+          accountHolderName: formData.holderName.trim(),
+          accountNumber: formData.accountNumber.trim(),
+          ifsc: formData.ifscCode.trim().toUpperCase(),
+        }
+      });
+      await mutate();
       setShowAddModal(false);
+    } catch (err: any) {
+      setSaveError(err.message || 'Failed to save bank details. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -156,63 +177,69 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
 
         {/* Bank Accounts List */}
         <div className="space-y-4">
-          {accounts.map(account => (
-            <div key={account.id} className="bg-[#FFFFFF] rounded-[16px] p-4 border border-[#E5E7EB] shadow-sm relative">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-[16px] font-bold text-slate-900">{account.bankName}</h3>
-                  {account.isPrimary && (
-                    <div className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded-md bg-[#DCFCE7] text-[#15803D] text-[11px] font-bold uppercase tracking-wide">
-                      Primary Account
-                    </div>
-                  )}
-                </div>
-                <button 
-                  onClick={() => setActiveMenuId(activeMenuId === account.id ? null : account.id)}
-                  className="w-8 h-8 flex items-center justify-center text-slate-400 active:bg-slate-50 rounded-full -mr-2 -mt-2"
-                >
-                  <MoreVertical size={20} />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <p className="text-[12px] text-slate-500 font-medium mb-0.5">Account Holder Name</p>
-                  <p className="text-[15px] font-semibold text-slate-900">{account.holderName}</p>
-                </div>
-                <div>
-                  <p className="text-[12px] text-slate-500 font-medium mb-0.5">Account Number</p>
-                  <p className="text-[16px] font-mono font-semibold text-slate-900 tracking-wider">{maskAccountNumber(account.accountNumber)}</p>
-                </div>
-                {account.upiId && (
+          {accounts.length > 0 ? (
+            accounts.map(account => (
+              <div key={account.id} className="bg-[#FFFFFF] rounded-[16px] p-4 border border-[#E5E7EB] shadow-sm relative">
+                <div className="flex items-start justify-between mb-4">
                   <div>
-                    <p className="text-[12px] text-slate-500 font-medium mb-0.5">UPI ID</p>
-                    <p className="text-[15px] font-semibold text-slate-900">{account.upiId}</p>
+                    <h3 className="text-[16px] font-bold text-slate-900">{account.bankName}</h3>
+                    {account.isPrimary && (
+                      <div className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded-md bg-[#DCFCE7] text-[#15803D] text-[11px] font-bold uppercase tracking-wide">
+                        Primary Account
+                      </div>
+                    )}
                   </div>
+                  <button 
+                    onClick={() => setActiveMenuId(activeMenuId === account.id ? null : account.id)}
+                    className="w-8 h-8 flex items-center justify-center text-slate-400 active:bg-slate-50 rounded-full -mr-2 -mt-2"
+                  >
+                    <MoreVertical size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[12px] text-slate-500 font-medium mb-0.5">Account Holder Name</p>
+                    <p className="text-[15px] font-semibold text-slate-900">{account.holderName}</p>
+                  </div>
+                  <div>
+                    <p className="text-[12px] text-slate-500 font-medium mb-0.5">Account Number</p>
+                    <p className="text-[16px] font-mono font-semibold text-slate-900 tracking-wider">{maskAccountNumber(account.accountNumber)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[12px] text-slate-500 font-medium mb-0.5">IFSC Code</p>
+                    <p className="text-[15px] font-semibold text-slate-900">{account.ifscCode}</p>
+                  </div>
+                </div>
+
+                {/* 3-Dot Menu Dropdown */}
+                {activeMenuId === account.id && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setActiveMenuId(null)} />
+                    <div className="absolute right-4 top-12 w-48 bg-[#FFFFFF] rounded-xl shadow-lg border border-slate-100 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                      <button onClick={() => handleOpenEdit(account)} className="w-full px-4 py-3 text-left text-[14px] font-medium text-slate-700 hover:bg-slate-50 border-b border-slate-50">
+                        Edit
+                      </button>
+                      <button onClick={() => handleDeleteClick(account.id)} className="w-full px-4 py-3 text-left text-[14px] font-medium text-red-600 hover:bg-red-50">
+                        Delete
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
-
-              {/* 3-Dot Menu Dropdown */}
-              {activeMenuId === account.id && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setActiveMenuId(null)} />
-                  <div className="absolute right-4 top-12 w-48 bg-[#FFFFFF] rounded-xl shadow-lg border border-slate-100 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                    <button onClick={() => handleOpenEdit(account)} className="w-full px-4 py-3 text-left text-[14px] font-medium text-slate-700 hover:bg-slate-50 border-b border-slate-50">
-                      Edit
-                    </button>
-                    {!account.isPrimary && (
-                      <button onClick={() => handleSetPrimary(account.id)} className="w-full px-4 py-3 text-left text-[14px] font-medium text-slate-700 hover:bg-slate-50 border-b border-slate-50">
-                        Set as Primary
-                      </button>
-                    )}
-                    <button onClick={() => handleDeleteClick(account.id)} className="w-full px-4 py-3 text-left text-[14px] font-medium text-red-600 hover:bg-red-50">
-                      Delete
-                    </button>
-                  </div>
-                </>
-              )}
+            ))
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50 rounded-2xl border border-slate-200">
+              <p className="text-[15px] font-bold text-slate-900 mb-1">No bank account added</p>
+              <p className="text-[13px] text-slate-500 mb-4 max-w-xs">Add your bank account details to receive weekly automated payouts.</p>
+              <button
+                onClick={handleOpenAdd}
+                className="px-5 py-2.5 bg-[#1E90FF] text-white rounded-xl text-xs font-bold active:scale-95 shadow-sm"
+              >
+                + Add Bank Account
+              </button>
             </div>
-          ))}
+          )}
         </div>
       </div>
 
@@ -221,24 +248,18 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
         <div className="fixed inset-0 z-[100] bg-black/50 flex flex-col justify-end animate-in fade-in duration-200">
           <div className="bg-[#FFFFFF] rounded-t-[24px] p-4 pb-8 animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6 sticky top-0 bg-[#FFFFFF] z-10 py-2">
-              <h2 className="text-[18px] font-bold text-slate-900">{editingId ? 'Edit Bank Account' : 'Add Bank Account'}</h2>
+              <h2 className="text-[18px] font-bold text-slate-900">{accounts.length > 0 ? 'Edit Bank Account' : 'Add Bank Account'}</h2>
               <button onClick={() => setShowAddModal(false)} className="p-2 text-slate-400 hover:text-slate-900 bg-slate-50 rounded-full">
                 <X size={20} />
               </button>
             </div>
             
             <div className="space-y-4">
-              <div>
-                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Bank Name</label>
-                <input 
-                  type="text"
-                  value={formData.bankName}
-                  onChange={(e) => setFormData({...formData, bankName: e.target.value})}
-                  className={`w-full h-[48px] px-3 bg-[#FFFFFF] border ${errors.bankName ? 'border-red-500' : 'border-[#E5E7EB]'} rounded-[12px] text-[15px] text-slate-900 focus:outline-none focus:border-[#1E90FF] transition-colors`}
-                  placeholder="e.g. HDFC Bank"
-                />
-                {errors.bankName && <p className="text-red-500 text-[12px] mt-1">{errors.bankName}</p>}
-              </div>
+              {saveError && (
+                <div className="p-3 rounded-xl bg-red-50 text-red-600 text-xs font-medium border border-red-100">
+                  {saveError}
+                </div>
+              )}
 
               <div>
                 <label className="block text-[13px] font-medium text-slate-700 mb-1.5">Account Holder Name</label>
@@ -247,7 +268,7 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
                   value={formData.holderName}
                   onChange={(e) => setFormData({...formData, holderName: e.target.value})}
                   className={`w-full h-[48px] px-3 bg-[#FFFFFF] border ${errors.holderName ? 'border-red-500' : 'border-[#E5E7EB]'} rounded-[12px] text-[15px] text-slate-900 focus:outline-none focus:border-[#1E90FF] transition-colors`}
-                  placeholder="e.g. Amit Sharma"
+                  placeholder="e.g. Rahul Sharma"
                 />
                 {errors.holderName && <p className="text-red-500 text-[12px] mt-1">{errors.holderName}</p>}
               </div>
@@ -288,23 +309,13 @@ export const BankAccountView: React.FC<BankAccountViewProps> = ({ onBack }) => {
                 {errors.ifscCode && <p className="text-red-500 text-[12px] mt-1">{errors.ifscCode}</p>}
               </div>
 
-              <div>
-                <label className="block text-[13px] font-medium text-slate-700 mb-1.5">UPI ID (Optional)</label>
-                <input 
-                  type="text"
-                  value={formData.upiId}
-                  onChange={(e) => setFormData({...formData, upiId: e.target.value})}
-                  className={`w-full h-[48px] px-3 bg-[#FFFFFF] border border-[#E5E7EB] rounded-[12px] text-[15px] text-slate-900 focus:outline-none focus:border-[#1E90FF] transition-colors`}
-                  placeholder="e.g. name@bank"
-                />
-              </div>
-
               <div className="pt-4">
                 <button 
-                  onClick={handleSave}
-                  className="w-full h-[52px] bg-[#1E90FF] text-white rounded-[14px] font-semibold text-[16px] flex items-center justify-center active:scale-[0.98] transition-all shadow-sm"
+                  onClick={handleSaveAccount}
+                  disabled={isSaving}
+                  className="w-full h-[52px] bg-[#1E90FF] text-white rounded-[14px] font-semibold text-[16px] flex items-center justify-center active:scale-[0.98] transition-all shadow-sm disabled:opacity-50"
                 >
-                  Save Bank Account
+                  {isSaving ? 'Saving...' : 'Save Bank Account'}
                 </button>
               </div>
             </div>

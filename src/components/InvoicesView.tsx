@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { FileText, Eye, Download, ArrowLeft, Search, Filter, Calendar, FileCheck2, Receipt } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+import { useEarningsSummary } from '@/api/earnings';
+
 interface InvoicesViewProps {
   onBack?: () => void;
 }
@@ -13,36 +15,34 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ onBack }) => {
     else if (window.history.length > 1) navigate(-1);
     else navigate('/');
   };
-  const [activeInvoiceType, setActiveInvoiceType] = useState<'subscription' | 'order' | 'ads' | 'platform'>('subscription');
+
+  const { earnings, isLoading } = useEarningsSummary();
   const [searchQuery, setSearchQuery] = useState('');
 
-  const invoiceData: Record<string, any[]> = {
-    subscription: [
-      { id: 'INV-SUB-052', date: 'May 1, 2026', amount: '₹999', status: 'Paid', downloadUrl: '#', items: 1, type: 'Monthly Plan' },
-      { id: 'INV-SUB-051', date: 'Apr 1, 2026', amount: '₹999', status: 'Paid', downloadUrl: '#', items: 1, type: 'Monthly Plan' },
-      { id: 'INV-SUB-050', date: 'Mar 1, 2026', amount: '₹999', status: 'Paid', downloadUrl: '#', items: 1, type: 'Monthly Plan' },
-    ],
-    order: [
-      { id: 'INV-ORD-1045', date: 'May 3, 2026', amount: '₹120', status: 'Paid', downloadUrl: '#', items: 3, type: 'Dine-in Order' },
-      { id: 'INV-ORD-1044', date: 'May 2, 2026', amount: '₹250', status: 'Paid', downloadUrl: '#', items: 5, type: 'Takeaway' },
-    ],
-    ads: [
-       { id: 'INV-ADS-012', date: 'May 1, 2026', amount: '₹500', status: 'Paid', downloadUrl: '#', items: 1, type: 'Top Placement Ads' },
-    ],
-    platform: [
-       { id: 'INV-PLAT-088', date: 'May 1, 2026', amount: '₹850', status: 'Paid', downloadUrl: '#', items: 42, type: 'Platform Fees' }
-    ]
-  };
-
-  const tabs = [
-    { id: 'subscription', label: 'Subscription' },
-    { id: 'order', label: 'Orders' },
-    { id: 'ads', label: 'Ads' },
-    { id: 'platform', label: 'Fees' },
+  const statements = [
+    {
+      id: 'PAY-STMT-CURR',
+      period: 'Current Week',
+      date: new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }),
+      amount: `₹ ${(earnings?.week?.earnings ?? 0).toLocaleString('en-IN')}`,
+      trips: earnings?.week?.trips ?? 0,
+      status: 'In Progress',
+      type: 'Weekly Payout Statement',
+    },
+    {
+      id: 'PAY-STMT-PREV',
+      period: 'Last Month',
+      date: new Date(Date.now() - 30 * 86400000).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }),
+      amount: `₹ ${(earnings?.lastMonth?.earnings ?? earnings?.month?.earnings ?? 0).toLocaleString('en-IN')}`,
+      trips: earnings?.lastMonth?.trips ?? earnings?.month?.trips ?? 0,
+      status: 'Settled',
+      type: 'Monthly Settlement Summary',
+    },
   ];
 
-  const filteredInvoices = (invoiceData[activeInvoiceType] || []).filter(inv => 
-    inv.id.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredInvoices = statements.filter(inv => 
+    inv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    inv.period.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -85,27 +85,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ onBack }) => {
           </button>
         </div>
 
-        {/* Segmented Tabs */}
-        <div className="bg-[#FFFFFF] p-1.5 rounded-xl border border-slate-200 shadow-sm flex overflow-x-auto no-scrollbar">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveInvoiceType(tab.id as any)}
-              className={`flex-1 min-w-[70px] whitespace-nowrap px-3 py-2 text-[13px] font-bold rounded-lg transition-all ${
-                activeInvoiceType === tab.id 
-                  ? 'bg-blue-600 text-white shadow-md' 
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        
-        {/* Invoice List */}
+        {/* Statement List */}
         <div className="space-y-4">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-[15px] font-bold text-slate-800">Recent Invoices</h2>
+            <h2 className="text-[15px] font-bold text-slate-800">Weekly Payout Statements</h2>
             <span className="text-[12px] font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">{filteredInvoices.length}</span>
           </div>
 
@@ -136,17 +119,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ onBack }) => {
               {/* Details strip */}
               <div className="flex bg-[#F8FAFC] rounded-xl p-3 items-center justify-between mb-4 border border-slate-100">
                  <span className="text-[13px] font-bold text-slate-700">{invoice.type}</span>
-                 <span className="text-[12px] font-medium text-slate-500">{invoice.items} Item{invoice.items > 1 ? 's' : ''}</span>
-              </div>
-
-              {/* Actions */}
-              <div className="grid grid-cols-2 gap-3 mt-1">
-                <button className="h-[44px] flex items-center justify-center gap-2 bg-[#FFFFFF] border-2 border-slate-200 text-slate-700 text-[14px] font-bold rounded-xl active:scale-[0.98] hover:border-slate-300 hover:bg-slate-50 transition-all">
-                  <Eye size={18} /> View
-                </button>
-                <button className="h-[44px] flex items-center justify-center gap-2 bg-[#E0F2FE] text-[#0284C7] text-[14px] font-bold rounded-xl active:scale-[0.98] hover:bg-[#BAE6FD] transition-all">
-                  <Download size={18} /> Download
-                </button>
+                 <span className="text-[12px] font-medium text-slate-500">{invoice.trips} Trips Completed</span>
               </div>
             </div>
           ))}

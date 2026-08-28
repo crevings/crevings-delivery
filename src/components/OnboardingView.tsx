@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuthStore } from '@/app/store';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -24,7 +25,7 @@ import {
   Lock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { post, BASE_URL } from "@/api/fetcher";
+import { get, post, BASE_URL } from "@/api/fetcher";
 import { analyzePhotoQuality, PhotoQualityResult } from "@/shared/utils/photoIntelligence";
 
 interface OnboardingViewProps {
@@ -32,39 +33,77 @@ interface OnboardingViewProps {
   onBack?: () => void;
 }
 
-// Upload helper to Cloudflare backend
+// Upload helper to Cloudflare backend - strict Cloudflare CDN upload (NO local blob/data-URI fallback)
 async function uploadFileToCloudflare(file: File | Blob, filename = "upload.jpg"): Promise<string> {
-  try {
-    const formData = new FormData();
-    formData.append("file", file, filename);
+  const formData = new FormData();
+  formData.append("file", file, filename);
 
-    const response = await fetch(`${BASE_URL}/upload/image/public`, {
-      method: "POST",
-      body: formData,
-    });
+  const response = await fetch(`${BASE_URL}/upload/image/public`, {
+    method: "POST",
+    body: formData,
+  });
 
-    if (response.ok) {
+  if (!response.ok) {
+    let errorMsg = `Upload failed with status ${response.status}`;
+    try {
       const json = await response.json();
-      if (json.data?.url) return json.data.url;
-      if (json.url) return json.url;
-    } else {
-      console.warn("Upload failed with status:", response.status);
+      if (json?.message) errorMsg = json.message;
+      else if (json?.error) errorMsg = json.error;
+    } catch {
+      // ignore JSON parse error
     }
-  } catch (err) {
-    console.warn("Cloudflare upload fallback to data URI:", err);
+    throw new Error(errorMsg);
   }
 
-  // Fallback to local Data URL
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.readAsDataURL(file);
-  });
+  const json = await response.json();
+  const url = json?.data?.url || json?.url;
+  if (!url || typeof url !== "string" || !url.startsWith("http")) {
+    throw new Error("Invalid Cloudflare upload response: image URL missing");
+  }
+
+  return url;
+}
+
+// Delete helper -- removes an image from Cloudflare CDN
+async function deleteImageFromCloudflare(imageUrl: string): Promise<void> {
+  if (!imageUrl || !imageUrl.startsWith("http")) return;
+  try {
+    await fetch(`${BASE_URL}/upload/image/public`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl }),
+    });
+  } catch {
+    // Best-effort cleanup -- dont block the retake flow
+  }
 }
 
 export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBack }) => {
   const navigate = useNavigate();
+  const partnerId = useAuthStore(s => s.partnerId);
+
+  // ── localStorage persistence key ────────────────────────────────────
+  const STORAGE_KEY = partnerId ? `onboarding_draft_${partnerId}` : null;
+
+  const saveDraft = (data: Record<string, any>) => {
+    if (!STORAGE_KEY) return;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  };
+  const loadDraft = (): Record<string, any> | null => {
+    if (!STORAGE_KEY) return null;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  };
+  const clearDraft = () => {
+    if (!STORAGE_KEY) return;
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  };
+
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1); // 4 = Success
+  const [isRestoringStep, setIsRestoringStep] = useState(true);
+  const [isSavingBasic, setIsSavingBasic] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
@@ -79,6 +118,70 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     emergencyPhone: "",
     emergencyRelationship: "Parent",
   });
+
+  // ── Restore onboarding progress from localStorage + backend on mount ──
+  useEffect(() => {
+    if (!partnerId) { setIsRestoringStep(false); return; }
+    (async () => {
+      // Priority 1: restore from localStorage draft (survives refresh)
+      const draft = loadDraft();
+      if (draft) {
+        if (draft.personalDetails) setPersonalDetails(draft.personalDetails);
+        if (draft.selfieUrl) setSelfieUrl(draft.selfieUrl);
+        if (draft.aadhaarNumber) setAadhaarNumber(draft.aadhaarNumber);
+        if (draft.aadhaarFrontPhoto) setAadhaarFrontPhoto(draft.aadhaarFrontPhoto);
+        if (draft.aadhaarBackPhoto) setAadhaarBackPhoto(draft.aadhaarBackPhoto);
+        if (draft.isAadhaarVerified) setIsAadhaarVerified(true);
+        if (draft.panNumber) setPanNumber(draft.panNumber);
+        if (draft.panCardPhoto) setPanCardPhoto(draft.panCardPhoto);
+        if (draft.isPanVerified) setIsPanVerified(true);
+        if (draft.termsAgreed) setTermsAgreed(true);
+        if (draft.isPhoneVerified) setIsPhoneVerified(true);
+        if (draft.currentStep && draft.currentStep >= 1 && draft.currentStep <= 3) {
+          setCurrentStep(draft.currentStep);
+        }
+        setIsRestoringStep(false);
+        return;
+      }
+      // Priority 2: fallback to backend status
+      try {
+        const data = await get<Record<string, any>>("/delivery/onboarding");
+        if (data?.onboardingStatus === "PROFILE" || data?.onboardingStatus === "KYC_PENDING") {
+          setCurrentStep(2);
+          setPersonalDetails({
+            name: data.name || "",
+            phone: data.phone || "",
+            email: data.email || "",
+            emergencyName: data.emergencyContact?.name || "",
+            emergencyPhone: data.emergencyContact?.phone || "",
+            emergencyRelationship: data.emergencyContact?.relationship || "Parent",
+          });
+        }
+        const selfieDoc = data.documents?.find((d: any) => d.type === "SELFIE");
+        const savedSelfieUrl = data.selfieUrl || selfieDoc?.url;
+        if (savedSelfieUrl && savedSelfieUrl.startsWith("http")) {
+          setSelfieUrl(savedSelfieUrl);
+          setCurrentStep(2);
+        }
+        // Restore KYC data from backend
+        const aadhaarFrontDoc = data.documents?.find((d: any) => d.type === "AADHAAR_FRONT");
+        const aadhaarBackDoc = data.documents?.find((d: any) => d.type === "AADHAAR_BACK");
+        const panDoc = data.documents?.find((d: any) => d.type === "PAN_CARD");
+        if (data.aadhaar?.verified) setIsAadhaarVerified(true);
+        if (data.pan?.verified) setIsPanVerified(true);
+        if (data.onboardingStatus === "KYC_PENDING" || data.aadhaar?.verified || data.pan?.verified) {
+          setCurrentStep(3);
+          if (aadhaarFrontDoc?.url) setAadhaarFrontPhoto(aadhaarFrontDoc.url);
+          if (aadhaarBackDoc?.url) setAadhaarBackPhoto(aadhaarBackDoc.url);
+          if (panDoc?.url) setPanCardPhoto(panDoc.url);
+        }
+      } catch {
+        // No saved progress -- start fresh at step 1
+      } finally {
+        setIsRestoringStep(false);
+      }
+    })();
+  }, [partnerId]);
 
   // Mobile OTP state
   const [phoneOtp, setPhoneOtp] = useState(["", "", "", "", "", ""]);
@@ -99,13 +202,14 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   }, [otpCountdown]);
 
   const handleSendPhoneOtp = async () => {
-    if (personalDetails.phone.length !== 10) return;
+    const cleanPhone = personalDetails.phone.replace(/\D/g, "").slice(-10);
+    if (cleanPhone.length !== 10) return;
     setIsSendingPhoneOtp(true);
     setPhoneOtpError(null);
     try {
       // Pre-check if phone number is already registered with another account
       const checkRes: any = await post("/delivery/onboarding/check-phone", {
-        phone: personalDetails.phone,
+        phone: cleanPhone,
       });
       if (checkRes && checkRes.available === false) {
         setPhoneOtpError(checkRes.message || "This phone number is already registered. Please log in.");
@@ -113,40 +217,75 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
         return;
       }
 
-      await post("/delivery/auth/request-whatsapp-otp", {
-        phone: personalDetails.phone,
+      const otpRes: any = await post("/delivery/auth/request-whatsapp-otp", {
+        phone: cleanPhone,
       });
+      if (otpRes?.otp) {
+        console.log("🔥 [OTP Generated]:", otpRes.otp);
+      }
       setShowOtpBox(true);
       setOtpCountdown(30);
+      setTimeout(() => {
+        otpInputs.current[0]?.focus();
+      }, 100);
     } catch (err: any) {
       console.warn("OTP request note:", err);
-      if (err.message && (err.message.includes("already registered") || err.message.includes("already exists"))) {
-        setPhoneOtpError(err.message);
+      const errMsg = err?.message || "";
+      if (errMsg && (errMsg.includes("already registered") || errMsg.includes("already exists"))) {
+        setPhoneOtpError(errMsg);
         return;
       }
       setShowOtpBox(true);
       setOtpCountdown(30);
+      setTimeout(() => {
+        otpInputs.current[0]?.focus();
+      }, 100);
     } finally {
       setIsSendingPhoneOtp(false);
     }
   };
 
-  const handleVerifyPhoneOtp = () => {
+  const handleVerifyPhoneOtp = async () => {
     const entered = phoneOtp.join("");
-    if (entered.length < 4) {
-      setPhoneOtpError("Please enter valid OTP");
+    if (entered.length < 6) {
+      setPhoneOtpError("Please enter complete 6-digit OTP");
       return;
     }
     setIsVerifyingPhoneOtp(true);
-    setTimeout(() => {
-      setIsPhoneVerified(true);
-      setShowOtpBox(false);
+    setPhoneOtpError(null);
+    try {
+      const cleanPhone = personalDetails.phone.replace(/\D/g, "").slice(-10);
+      const res: any = await post("/delivery/auth/verify-otp", {
+        phone: cleanPhone,
+        otp: entered,
+      });
+      if (res && res.success === true) {
+        setIsPhoneVerified(true);
+        setShowOtpBox(false);
+        setPhoneOtpError(null);
+      } else {
+        setPhoneOtpError(res?.message || "Invalid OTP. Please try again.");
+      }
+    } catch (err: any) {
+      setPhoneOtpError(err?.message || "Invalid OTP. Please check the code and retry.");
+    } finally {
       setIsVerifyingPhoneOtp(false);
-    }, 600);
+    }
   };
 
   const handleOtpDigitChange = (val: string, idx: number) => {
     const digits = val.replace(/\D/g, "");
+    if (digits.length > 1) {
+      const newOtp = [...phoneOtp];
+      const chars = digits.slice(0, 6 - idx).split("");
+      chars.forEach((char, i) => {
+        if (idx + i < 6) newOtp[idx + i] = char;
+      });
+      setPhoneOtp(newOtp);
+      const nextFocus = Math.min(idx + chars.length, 5);
+      otpInputs.current[nextFocus]?.focus();
+      return;
+    }
     const newOtp = [...phoneOtp];
     newOtp[idx] = digits.slice(-1);
     setPhoneOtp(newOtp);
@@ -155,34 +294,25 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     }
   };
 
+  const handleOtpKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    if (e.key === "Backspace" && !phoneOtp[idx] && idx > 0) {
+      otpInputs.current[idx - 1]?.focus();
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────
   // PAGE 2: Live Selfie Upload & Quality Intelligence
   // ─────────────────────────────────────────────────────────────
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
+  const previousSelfieUrlRef = useRef<string | null>(null);
+  const [isUploadingSelfie, setIsUploadingSelfie] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [photoAnalysis, setPhotoAnalysis] = useState<PhotoQualityResult | null>(null);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-
-  const startCamera = async () => {
-    try {
-      setIsCameraActive(true);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode, width: { ideal: 640 }, height: { ideal: 640 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-    } catch (err) {
-      console.warn("Camera access denied/failed:", err);
-      setIsCameraActive(false);
-    }
-  };
+  const selfieInputRef = useRef<HTMLInputElement | null>(null);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -198,6 +328,90 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     };
   }, [stopCamera]);
 
+  const triggerNativeCamera = () => {
+    if (selfieInputRef.current) {
+      selfieInputRef.current.click();
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        triggerNativeCamera();
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 640 }, height: { ideal: 640 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setIsCameraActive(true);
+    } catch (err) {
+      console.warn("Camera stream denied/unavailable, opening native camera:", err);
+      setIsCameraActive(false);
+      triggerNativeCamera();
+    }
+  };
+
+  // Ensure stream attaches to video once video element mounts
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch((e) => console.warn("Video play error:", e));
+    }
+  }, [isCameraActive, facingMode]);
+
+  const handleSelfieFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      stopCamera();
+      setIsUploadingSelfie(true);
+      setGlobalError(null);
+
+      // Analyze photo quality locally
+      setIsAnalyzingPhoto(true);
+      const img = new Image();
+      const localPreview = URL.createObjectURL(file);
+      img.onload = async () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || 480;
+        canvas.height = img.naturalHeight || 480;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          try {
+            const quality = await analyzePhotoQuality(canvas);
+            setPhotoAnalysis(quality);
+          } catch (err) {
+            console.warn("Quality analysis error:", err);
+          }
+        }
+        setIsAnalyzingPhoto(false);
+        URL.revokeObjectURL(localPreview);
+      };
+      img.src = localPreview;
+
+      // Strict Cloudflare upload
+      // Delete old Cloudflare image if retaking
+      const oldUrl = selfieUrl;
+      const uploadedUrl = await uploadFileToCloudflare(file, "selfie.jpg");
+      setSelfieUrl(uploadedUrl);
+      previousSelfieUrlRef.current = uploadedUrl;
+      if (oldUrl && oldUrl !== uploadedUrl) {
+        deleteImageFromCloudflare(oldUrl).catch(() => {});
+      }
+      // Persist selfie to backend so it survives localStorage clear
+      post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl }).catch(() => {});
+    } catch (err: any) {
+      console.error("Selfie upload error:", err);
+      setGlobalError(err.message || "Failed to upload selfie to Cloudflare. Please try again.");
+      setSelfieUrl(null);
+    } finally {
+      setIsUploadingSelfie(false);
+    }
+  };
+
   const captureSelfieFrame = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
@@ -209,14 +423,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // 1. Immediately set local preview data URL so photo displays instantly
-    const localDataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    setSelfieUrl(localDataUrl);
-
-    // 2. Stop camera stream
+    // Stop camera stream
     stopCamera();
 
-    // 3. Run instant photo quality analysis directly from the canvas
+    // Run instant photo quality analysis directly from the canvas
     setIsAnalyzingPhoto(true);
     try {
       const quality = await analyzePhotoQuality(canvas);
@@ -227,27 +437,32 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       setIsAnalyzingPhoto(false);
     }
 
-    // 4. Background upload to Cloudflare / backend storage
+    // Direct Cloudflare upload
+    setIsUploadingSelfie(true);
+    setGlobalError(null);
     canvas.toBlob(async (blob) => {
       if (blob) {
         try {
+          // Delete old Cloudflare image if retaking
+          const oldUrl = selfieUrl;
           const uploadedUrl = await uploadFileToCloudflare(blob, "selfie.jpg");
-          if (uploadedUrl) {
-            setSelfieUrl(uploadedUrl);
+          setSelfieUrl(uploadedUrl);
+          previousSelfieUrlRef.current = uploadedUrl;
+          if (oldUrl && oldUrl !== uploadedUrl) {
+            deleteImageFromCloudflare(oldUrl).catch(() => {});
           }
-        } catch (err) {
-          console.warn("Selfie upload warning, keeping local preview:", err);
+          // Persist selfie to backend so it survives localStorage clear
+          post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl }).catch(() => {});
+        } catch (err: any) {
+          console.error("Selfie upload error:", err);
+          setGlobalError(err.message || "Failed to upload selfie to Cloudflare. Please try again.");
+          setSelfieUrl(null);
+        } finally {
+          setIsUploadingSelfie(false);
         }
       }
     }, "image/jpeg", 0.92);
   };
-
-  // Auto-start live camera when navigating to Step 2
-  useEffect(() => {
-    if (currentStep === 2 && !selfieUrl && !isCameraActive) {
-      startCamera();
-    }
-  }, [currentStep, selfieUrl]);
 
   // ─────────────────────────────────────────────────────────────
   // PAGE 3: Aadhaar & PAN Verification
@@ -277,6 +492,25 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   const [isUploadingPan, setIsUploadingPan] = useState(false);
 
   const [termsAgreed, setTermsAgreed] = useState(false);
+
+  // ── Auto-save onboarding draft to localStorage on every change ────
+  useEffect(() => {
+    if (isRestoringStep) return; // Don't save while still loading
+    saveDraft({
+      currentStep,
+      personalDetails,
+      isPhoneVerified,
+      selfieUrl,
+      aadhaarNumber,
+      aadhaarFrontPhoto,
+      aadhaarBackPhoto,
+      isAadhaarVerified,
+      panNumber,
+      panCardPhoto,
+      isPanVerified,
+      termsAgreed,
+    });
+  }, [currentStep, personalDetails, isPhoneVerified, selfieUrl, aadhaarNumber, aadhaarFrontPhoto, aadhaarBackPhoto, isAadhaarVerified, panNumber, panCardPhoto, isPanVerified, termsAgreed, isRestoringStep]);
 
   const handleSendAadhaarOtp = async () => {
     const clean = aadhaarNumber.replace(/\D/g, "");
@@ -321,6 +555,13 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       });
       if (res?.success || res?.verified) {
         setIsAadhaarVerified(true);
+        // Persist Aadhaar to backend so it survives localStorage clear
+        post("/delivery/onboarding/kyc-draft", {
+          aadhaarNumber: aadhaarNumber.trim(),
+          aadhaarVerified: true,
+          aadhaarFrontUrl: aadhaarFrontPhoto || "",
+          aadhaarBackUrl: aadhaarBackPhoto || "",
+        }).catch(() => {});
       } else {
         setAadhaarError(res?.message || "Invalid Aadhaar OTP");
       }
@@ -350,6 +591,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       });
       if (res?.success || res?.verified) {
         setIsPanVerified(true);
+        // Persist PAN to backend so it survives localStorage clear
+        post("/delivery/onboarding/kyc-draft", {
+          panNumber: panNumber.trim().toUpperCase(),
+          panVerified: true,
+          panCardUrl: panCardPhoto || "",
+        }).catch(() => {});
       } else {
         setPanError(res?.message || "PAN verification failed");
       }
@@ -397,6 +644,15 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       };
 
       await post("/delivery/onboarding/submit", payload);
+      // Clear onboarding draft from localStorage (no longer needed)
+      clearDraft();
+      // Persist onboarding-complete flag so ProtectedRoute allows app access
+      // on next login / app restart.
+      if (partnerId) {
+        try {
+          localStorage.setItem(`onboarding_complete_${partnerId}`, 'true');
+        } catch { /* non-fatal */ }
+      }
       setCurrentStep(4); // Show success screen
     } catch (err: any) {
       setGlobalError(err.message || "Failed to submit application. Please check all details.");
@@ -419,7 +675,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     personalDetails.emergencyPhone.length === 10 &&
     !isSamePhone;
 
-  const isStep2Valid = !!selfieUrl && (!photoAnalysis || photoAnalysis.passed);
+  const isStep2Valid = !!selfieUrl && !isUploadingSelfie && typeof selfieUrl === "string" && selfieUrl.startsWith("http") && (!photoAnalysis || photoAnalysis.passed);
 
   const isStep3Valid =
     (isAadhaarVerified || (aadhaarFrontPhoto && aadhaarBackPhoto)) &&
@@ -573,9 +829,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                               otpInputs.current[i] = el;
                             }}
                             type="tel"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             maxLength={1}
                             value={digit}
                             onChange={(e) => handleOtpDigitChange(e.target.value, i)}
+                            onKeyDown={(e) => handleOtpKeyDown(e, i)}
                             className="w-11 h-12 text-center text-lg font-bold bg-white rounded-xl border border-emerald-300 focus:border-[#00bd6f] focus:outline-none"
                           />
                         ))}
@@ -682,15 +941,31 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
               <div className="pt-4">
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(2)}
-                  disabled={!isStep1Valid}
+                  onClick={async () => {
+                    if (!isStep1Valid) return;
+                    setIsSavingBasic(true);
+                    try {
+                      await post("/delivery/onboarding/basic", {
+                        name: personalDetails.name.trim(),
+                        phone: personalDetails.phone,
+                        email: personalDetails.email.trim().toLowerCase(),
+                        vehicleType: "Bike",
+                      });
+                    } catch {
+                      // Non-fatal: step 1 data will be included in final submission
+                    } finally {
+                      setIsSavingBasic(false);
+                      setCurrentStep(2);
+                    }
+                  }}
+                  disabled={!isStep1Valid || isSavingBasic}
                   className={`w-full h-14 rounded-2xl font-bold text-[16px] flex items-center justify-center transition-all ${
                     isStep1Valid
                       ? "bg-[#00bd6f] text-white active:scale-98 shadow-md shadow-emerald-500/20"
                       : "bg-slate-200 text-slate-400 cursor-not-allowed"
                   }`}
                 >
-                  Continue to Selfie Verification
+                  {isSavingBasic ? "Saving..." : "Continue to Selfie Verification"}
                 </button>
               </div>
             </motion.div>
@@ -771,6 +1046,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                         </button>
                       </div>
                     </>
+                  ) : isUploadingSelfie ? (
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-white space-y-3">
+                      <Loader2 size={36} className="animate-spin text-[#00bd6f]" />
+                      <p className="text-sm font-bold text-white">Uploading to Cloudflare CDN...</p>
+                      <p className="text-xs text-slate-400">Please wait a moment while your photo is verified</p>
+                    </div>
                   ) : selfieUrl ? (
                     <div className="relative w-full h-full">
                       <img src={selfieUrl} alt="Selfie" className="w-full h-full object-cover" />
@@ -779,28 +1060,48 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                         onClick={() => {
                           setSelfieUrl(null);
                           setPhotoAnalysis(null);
-                          startCamera();
+                          if (streamRef.current) stopCamera();
                         }}
-                        className="absolute bottom-3 right-3 px-3 py-1.5 bg-black/70 backdrop-blur-md text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md"
+                        className="absolute bottom-3 right-3 px-3.5 py-2 bg-black/70 backdrop-blur-md text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-md active:scale-95"
                       >
-                        <RefreshCw size={12} /> Retake
+                        <RefreshCw size={13} /> Retake Photo
                       </button>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center p-6 text-center text-white/80 space-y-4">
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-white/80 space-y-3.5">
                       <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center text-[#00bd6f]">
                         <Camera size={32} />
                       </div>
                       <p className="text-xs font-semibold text-slate-300">
-                        Live camera verification is required.
+                        Take a clear front-facing selfie to complete identity check.
                       </p>
-                      <button
-                        type="button"
-                        onClick={startCamera}
-                        className="w-full max-w-[200px] py-3 bg-[#00bd6f] text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
-                      >
-                        <Camera size={15} /> Start Live Camera
-                      </button>
+                      
+                      <div className="w-full space-y-2 max-w-[220px]">
+                        <button
+                          type="button"
+                          onClick={triggerNativeCamera}
+                          className="w-full py-3 bg-[#00bd6f] text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <Camera size={16} /> Open Camera
+                        </button>
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="w-full py-2 bg-white/10 hover:bg-white/20 text-white font-semibold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1"
+                        >
+                          Live Video Stream
+                        </button>
+                      </div>
+
+                      {/* Hidden Native Device Camera Input */}
+                      <input
+                        ref={selfieInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="user"
+                        className="hidden"
+                        onChange={handleSelfieFileChange}
+                      />
                     </div>
                   )}
                 </div>
@@ -1048,9 +1349,16 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                             const file = e.target.files?.[0];
                             if (file) {
                               setIsUploadingFront(true);
-                              const url = await uploadFileToCloudflare(file, "aadhaar_front.jpg");
-                              setAadhaarFrontPhoto(url);
-                              setIsUploadingFront(false);
+                              setAadhaarError(null);
+                              try {
+                                const url = await uploadFileToCloudflare(file, "aadhaar_front.jpg");
+                                setAadhaarFrontPhoto(url);
+                              } catch (err: any) {
+                                console.error("Aadhaar front upload error:", err);
+                                setAadhaarError(err.message || "Failed to upload Aadhaar front image");
+                              } finally {
+                                setIsUploadingFront(false);
+                              }
                             }
                           };
                           input.click();
@@ -1080,9 +1388,16 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                             const file = e.target.files?.[0];
                             if (file) {
                               setIsUploadingBack(true);
-                              const url = await uploadFileToCloudflare(file, "aadhaar_back.jpg");
-                              setAadhaarBackPhoto(url);
-                              setIsUploadingBack(false);
+                              setAadhaarError(null);
+                              try {
+                                const url = await uploadFileToCloudflare(file, "aadhaar_back.jpg");
+                                setAadhaarBackPhoto(url);
+                              } catch (err: any) {
+                                console.error("Aadhaar back upload error:", err);
+                                setAadhaarError(err.message || "Failed to upload Aadhaar back image");
+                              } finally {
+                                setIsUploadingBack(false);
+                              }
                             }
                           };
                           input.click();
@@ -1164,9 +1479,16 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                             const file = e.target.files?.[0];
                             if (file) {
                               setIsUploadingPan(true);
-                              const url = await uploadFileToCloudflare(file, "pan_card.jpg");
-                              setPanCardPhoto(url);
-                              setIsUploadingPan(false);
+                              setPanError(null);
+                              try {
+                                const url = await uploadFileToCloudflare(file, "pan_card.jpg");
+                                setPanCardPhoto(url);
+                              } catch (err: any) {
+                                console.error("PAN card upload error:", err);
+                                setPanError(err.message || "Failed to upload PAN card image");
+                              } finally {
+                                setIsUploadingPan(false);
+                              }
                             }
                           };
                           input.click();
@@ -1294,7 +1616,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                 }}
                 className="w-full max-w-sm h-14 bg-slate-900 text-white rounded-2xl font-bold text-[16px] hover:bg-black active:scale-98 transition-all shadow-md"
               >
-                Back to Login
+                Go to Login
               </button>
             </motion.div>
           )}

@@ -19,7 +19,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     lintOptions {
@@ -31,7 +31,7 @@ android {
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.outputs.forEach { output ->
-            output.outputFileName.set("CrevingsDelivery.apk")
+            output.outputFileName.set("Crevings Delivery Partner.apk")
         }
     }
 }
@@ -42,7 +42,7 @@ tasks.configureEach { task ->
             def bundleDir = file("$buildDir/outputs/bundle/release")
             def defaultAab = new File(bundleDir, "app-release.aab")
             if (defaultAab.exists()) {
-                def targetAab = new File(bundleDir, "CrevingsDelivery.aab")
+                def targetAab = new File(bundleDir, "Crevings Delivery Partner.aab")
                 defaultAab.renameTo(targetAab)
             }
         }
@@ -64,8 +64,14 @@ dependencies {
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
-    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+
+    // Import the Firebase BoM
+    implementation platform('com.google.firebase:firebase-bom:34.18.0')
+
+    // Firebase products
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-messaging'
 }
 
 apply from: 'capacitor.build.gradle'

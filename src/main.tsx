@@ -12,9 +12,13 @@ import { env } from '@/config/env';
 import { useAuthStore } from '@/app/store';
 import { logInfo } from '@/utils/security/auditLog';
 import { usePartnerStore } from '@/app/store';
+import { initPushNotifications } from '@/services/push';
 import './index.css';
 
-logInfo('Application initializing', { env: env.VITE_APP_ENV });
+logInfo('Application initializing', { mode: import.meta.env.MODE });
+
+// Initialize Firebase Cloud Messaging push notifications (on native mobile devices)
+void initPushNotifications();
 
 const token = sessionStorage.getItem('delivery_auth_token');
 

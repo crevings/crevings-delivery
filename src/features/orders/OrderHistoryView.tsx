@@ -4,79 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { Order } from '@/types';
 import { OrderDetailView } from './OrderDetailView';
 
-const mockHistoryOrders: Order[] = [
-  {
-    id: '#1052',
-    customer: 'Rahul K.',
-    type: 'Delivery',
-    channel: 'Website',
-    items: '2x Butter Chicken, 4x Naan',
-    total: '₹840',
-    status: 'Delivered',
-    time: 'Yesterday, 8:45 PM',
-    itemList: [
-      { name: 'Butter Chicken', quantity: 2, price: 340 },
-      { name: 'Garlic Naan', quantity: 4, price: 40 }
-    ],
-    paymentStatus: 'Paid',
-    subtotal: 840,
-    address: 'Sector 14, High Street'
-  },
-  {
-    id: '#1051',
-    customer: 'Priya S.',
-    type: 'Dine-in',
-    channel: 'Table 4',
-    items: '1x Veg Biryani, 1x Raita',
-    total: '₹320',
-    status: 'Completed',
-    time: 'Yesterday, 7:30 PM',
-    itemList: [
-      { name: 'Veg Biryani', quantity: 1, price: 280 },
-      { name: 'Raita', quantity: 1, price: 40 }
-    ],
-    paymentStatus: 'Paid',
-    subtotal: 320
-  },
-  {
-    id: '#1050',
-    customer: 'Amit M.',
-    type: 'Takeaway',
-    channel: 'In-Store',
-    items: '2x Masala Dosa, 2x Filter Coffee',
-    total: '₹280',
-    status: 'Completed',
-    time: 'May 12, 9:15 AM',
-    paymentStatus: 'Paid'
-  },
-  {
-    id: '#1049',
-    customer: 'Neha J.',
-    type: 'Delivery',
-    channel: 'App',
-    items: '1x Paneer Tikka, 2x Roti',
-    total: '₹340',
-    status: 'Cancelled',
-    time: 'May 12, 8:20 PM',
-    paymentStatus: 'Unpaid',
-    address: 'Phase 2, Block A'
-  },
-  {
-    id: '#1048',
-    customer: 'Vikram L.',
-    type: 'Dine-in',
-    channel: 'Table 2',
-    items: '1x Chicken Tikka, 1x Coke',
-    total: '₹420',
-    status: 'Rejected',
-    time: 'May 11, 2:15 PM',
-    paymentStatus: 'Refunded'
-  }
-];
+import { useOrderHistory } from '@/api/orders';
 
 export const OrderHistoryView: React.FC = () => {
   const navigate = useNavigate();
   const onBack = () => navigate(-1);
+  const { orderHistory, isLoading, isError, mutate } = useOrderHistory();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [statusFilter, setStatusFilter] = useState('All');
@@ -91,9 +24,11 @@ export const OrderHistoryView: React.FC = () => {
     );
   }
 
-  const filteredOrders = mockHistoryOrders.filter(order => {
-    const matchesSearch = order.id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         order.customer.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredOrders = (orderHistory || []).filter(order => {
+    const orderId = (order.displayOrderNumber || order.displayOrderId || order.id || '').toLowerCase();
+    const customer = (order.customer || '').toLowerCase();
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = !q || orderId.includes(q) || customer.includes(q);
     
     const matchesStatus = statusFilter === 'All' || 
                          (statusFilter === 'Completed' && (order.status === 'Completed' || order.status === 'Delivered')) ||

@@ -6,6 +6,7 @@ import { SWR_HOT } from "../swrConfig";
 export interface DeliveryPartnerProfile {
   partnerId?: string;
   name?: string;
+  avatar?: string;
   phone?: string;
   phoneVerified?: boolean;
   email?: string;
@@ -20,11 +21,36 @@ export interface DeliveryPartnerProfile {
   licenseNumber?: string;
   status?: string;
   isOnline?: boolean;
+  rating?: number;
+  walletBalance?: number;
+  floatingCash?: number;
+  onboardingStatus?: string;
+  kycStatus?: string;
+  selfieUrl?: string;
+  aadhaarNumber?: string;
+  aadhaarVerified?: boolean;
+  aadhaarFrontUrl?: string;
+  aadhaarBackUrl?: string;
+  panNumber?: string;
+  panVerified?: boolean;
+  panCardUrl?: string;
+  bankAccount?: {
+    accountHolderName?: string;
+    accountNumber?: string;
+    ifsc?: string;
+    verified?: boolean;
+  };
+  documents?: Array<{
+    type?: string;
+    url?: string;
+    status?: string;
+  }>;
 }
 
 /** Fields a delivery partner can update via PATCH /delivery/profile. */
 export interface UpdateProfileData {
   name?: string;
+  avatar?: string;
   phone?: string;
   phoneVerified?: boolean;
   dateOfBirth?: string;
@@ -33,9 +59,15 @@ export interface UpdateProfileData {
     phone?: string;
     relationship?: string;
   };
-  vehicleType?: string;
+  vehicleType?: 'Bike' | 'Scooter' | 'Cycle' | 'Electric Bike' | string;
   vehicleNumber?: string;
   licenseNumber?: string;
+  bankAccount?: {
+    accountHolderName?: string;
+    accountNumber?: string;
+    ifsc?: string;
+    verified?: boolean;
+  };
 }
 
 export const usePartnerProfile = () => {

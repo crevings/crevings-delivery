@@ -11,8 +11,11 @@
  * - Automatic token refresh on 401 (single retry, then fail).
  */
 
-export const BASE_URL =
-  (import.meta.env.VITE_PUBLIC_BASE_API_URL || "http://127.0.0.1:42007") + "/api";
+const RAW_BASE_URL =
+  import.meta.env.VITE_PUBLIC_BASE_API_URL ||
+  "https://backend.crevings.com";
+
+export const BASE_URL = RAW_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "") + "/api";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 

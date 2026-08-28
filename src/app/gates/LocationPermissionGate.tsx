@@ -28,7 +28,10 @@ export function LocationPermissionGate({ children }: { children: React.ReactNode
   }
 
   const hasCoordinates = typeof latitude === 'number' && typeof longitude === 'number';
-  const isLocationBlocked = !hasPermission || (!hasCoordinates && !isChecking && !!errorMsg);
+  // Only block on hard permission denial or GPS-off.  Transient errors
+  // (timeouts, network blips) should never show the full-screen gate —
+  // the app retries automatically via watchPosition and heartbeat poll.
+  const isLocationBlocked = !hasPermission || isGpsOff;
 
   if (isLocationBlocked) {
     return (

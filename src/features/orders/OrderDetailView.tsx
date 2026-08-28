@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, Headset, Store, User, Phone, Navigation, MessageCircle, 
   Info, ShoppingBag, ChevronDown, CheckCircle, Truck, Camera, X
@@ -53,11 +53,115 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<'Cash' | 'UPI' | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Focus the first OTP input when either OTP sheet opens
+  useEffect(() => {
+    let timer: any = null;
+    if (showPickupOtpSheet || showDeliveryOtpSheet) {
+      timer = setTimeout(() => {
+        otpRefs.current[0]?.focus();
+      }, 100);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [showPickupOtpSheet, showDeliveryOtpSheet]);
+
+  const handleOtpChange = (val: string, index: number) => {
+    if (otpError) setOtpError(null);
+    const digitsOnly = val.replace(/\D/g, '');
+
+    // Handle multi-digit (e.g. browser autofill or rapid input)
+    if (digitsOnly.length > 1) {
+      const newOtp = [...otpValue];
+      const chars = digitsOnly.slice(0, 6 - index).split('');
+      chars.forEach((char, i) => {
+        if (index + i < 6) {
+          newOtp[index + i] = char;
+        }
+      });
+      setOtpValue(newOtp);
+      const nextFocus = Math.min(index + chars.length, 5);
+      otpRefs.current[nextFocus]?.focus();
+      return;
+    }
+
+    // Single digit entry
+    const newOtp = [...otpValue];
+    newOtp[index] = digitsOnly;
+    setOtpValue(newOtp);
+
+    // Auto-advance to next box if digit entered
+    if (digitsOnly && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (e.key === 'Backspace') {
+      if (!otpValue[index] && index > 0) {
+        e.preventDefault();
+        const newOtp = [...otpValue];
+        newOtp[index - 1] = '';
+        setOtpValue(newOtp);
+        otpRefs.current[index - 1]?.focus();
+      } else if (otpValue[index]) {
+        const newOtp = [...otpValue];
+        newOtp[index] = '';
+        setOtpValue(newOtp);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      e.preventDefault();
+      otpRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      e.preventDefault();
+      otpRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>, startIndex: number) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text').replace(/\D/g, '');
+    if (!pastedText) return;
+
+    const newOtp = [...otpValue];
+    const digits = pastedText.slice(0, 6).split('');
+    const targetStart = digits.length === 6 ? 0 : startIndex;
+
+    digits.forEach((char, i) => {
+      if (targetStart + i < 6) {
+        newOtp[targetStart + i] = char;
+      }
+    });
+
+    setOtpValue(newOtp);
+    const nextFocusIndex = Math.min(targetStart + digits.length, 5);
+    otpRefs.current[nextFocusIndex]?.focus();
+  };
 
   useEffect(() => {
     if (order.status) {
       setCurrentStatus(order.status);
     }
+  }, [order.status]);
+
+  // When the backend marks the order COMPLETED/DELIVERED (e.g. via OTP
+  // verification or real-time SSE update), automatically redirect the driver
+  // back to the home/orders screen after a brief delay so they see the
+  // success state before navigating away.
+  useEffect(() => {
+    const s = (order.status || '').toUpperCase();
+    if (s === 'COMPLETED' || s === 'DELIVERED') {
+      const timer = setTimeout(() => {
+        onBack?.();
+        navigate('/', { replace: true });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
   }, [order.status]);
 
   const isCOD = order.paymentStatus !== 'Paid';
@@ -179,6 +283,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
 
   const handlePickupOtpVerify = async () => {
     const pin = otpValue.join('').trim();
+    setOtpError(null);
     setIsVerifying(true);
     try {
       const res = await fetch(`${BASE_URL}/delivery/orders/${realOrderId}/verify-pickup`, {
@@ -189,14 +294,14 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.message || "Invalid Restaurant Pickup PIN");
+        setOtpError(data.message || "Invalid Restaurant Pickup PIN");
         setIsVerifying(false);
         return;
       }
       setCurrentStatus('OUT FOR DELIVERY');
     } catch (err: any) {
       console.error("Pickup OTP verification error:", err);
-      alert("Network error verifying Pickup PIN: " + (err.message || 'Please check your connection'));
+      setOtpError("Network error. Please check your connection.");
       setIsVerifying(false);
       return;
     } finally {
@@ -204,6 +309,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     }
 
     setShowPickupOtpSheet(false);
+    setOtpError(null);
     onUpdateOrderStatus?.(order.id, 'OUT FOR DELIVERY');
   };
 
@@ -226,6 +332,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
 
   const handleDeliveryOtpVerify = async () => {
     const pin = otpValue.join('').trim();
+    setOtpError(null);
     setIsVerifying(true);
     try {
       const res = await fetch(`${BASE_URL}/delivery/orders/${realOrderId}/complete`, {
@@ -236,14 +343,14 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        alert(data.message || "Invalid Customer Delivery PIN");
+        setOtpError(data.message || "Invalid Customer Delivery PIN");
         setIsVerifying(false);
         return;
       }
       setCurrentStatus('COMPLETED');
     } catch (err: any) {
       console.error("Delivery OTP verification error:", err);
-      alert("Network error verifying Delivery PIN: " + (err.message || 'Please check your connection'));
+      setOtpError("Network error. Please check your connection.");
       setIsVerifying(false);
       return;
     } finally {
@@ -251,6 +358,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     }
 
     setShowDeliveryOtpSheet(false);
+    setOtpError(null);
     onUpdateOrderStatus?.(order.id, 'COMPLETED');
     handleBack();
   };
@@ -528,22 +636,30 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </button>
             </div>
             <p className="text-slate-500 mb-4 text-[15px]">Ask restaurant for the 6-digit PIN to confirm pickup.</p>
-            <div className="flex gap-2 justify-between mb-8">
+            <div className="flex gap-2 justify-between mb-4">
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <input 
                   key={index}
-                  type="text"
+                  ref={(el) => { otpRefs.current[index] = el; }}
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={1}
-                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                  autoComplete="one-time-code"
+                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                   value={otpValue[index]}
-                  onChange={(e) => {
-                    const newOtp = [...otpValue];
-                    newOtp[index] = e.target.value.replace(/[^0-9]/g, '');
-                    setOtpValue(newOtp);
-                  }}
+                  onChange={(e) => handleOtpChange(e.target.value, index)}
+                  onKeyDown={(e) => handleOtpKeyDown(e, index)}
+                  onPaste={(e) => handleOtpPaste(e, index)}
+                  onFocus={(e) => e.target.select()}
                 />
               ))}
             </div>
+            {otpError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200">
+                <span className="text-[14px] font-semibold text-red-600">{otpError}</span>
+              </div>
+            )}
             <button 
               onClick={handlePickupOtpVerify}
               disabled={isVerifying}
@@ -636,28 +752,36 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </button>
             </div>
             <p className="text-slate-500 mb-6 text-[15px]">Ask customer for the 6-digit PIN to confirm delivery.</p>
-            <div className="flex gap-2 justify-between mb-8">
+            <div className="flex gap-2 justify-between mb-4">
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <input 
                   key={index}
-                  type="text"
+                  ref={(el) => { otpRefs.current[index] = el; }}
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={1}
-                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                  autoComplete="one-time-code"
+                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                   value={otpValue[index]}
-                  onChange={(e) => {
-                    const newOtp = [...otpValue];
-                    newOtp[index] = e.target.value.replace(/[^0-9]/g, '');
-                    setOtpValue(newOtp);
-                  }}
+                  onChange={(e) => handleOtpChange(e.target.value, index)}
+                  onKeyDown={(e) => handleOtpKeyDown(e, index)}
+                  onPaste={(e) => handleOtpPaste(e, index)}
+                  onFocus={(e) => e.target.select()}
                 />
               ))}
             </div>
+            {otpError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200">
+                <span className="text-[14px] font-semibold text-red-600">{otpError}</span>
+              </div>
+            )}
             <button 
               onClick={handleDeliveryOtpVerify}
               disabled={isVerifying}
               className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
             >
-              Verify OTP
+              {isVerifying ? 'Verifying PIN...' : 'Verify OTP'}
             </button>
           </div>
         </div>

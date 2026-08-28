@@ -15,6 +15,7 @@ import { acceptOrder, mapActiveOrder, respondToDispatch, useActiveOrders, useAva
 import { toggleOnline, getPartnerProfile } from '@/api/partner';
 import { BASE_URL } from '@/api/fetcher';
 import { useOrdersStore, usePartnerStore } from '@/app/store';
+import { useAuthStore } from '@/app/store';
 import { createSSEClient } from '@/lib/sse-client';
 
 export const Dashboard: React.FC = () => {
@@ -42,6 +43,16 @@ export const Dashboard: React.FC = () => {
           }
           if (res.profile.isOnline !== undefined) {
             setIsOnline(Boolean(res.profile.isOnline));
+          }
+          // If the backend confirms onboarding is complete, persist the flag
+          // so ProtectedRoute allows app access on next login/restart.
+          if (res.profile.onboardingStatus === 'COMPLETED' || res.profile.status === 'Active') {
+            const pid = useAuthStore.getState().partnerId;
+            if (pid) {
+              try {
+                localStorage.setItem(`onboarding_complete_${pid}`, 'true');
+              } catch { /* non-fatal */ }
+            }
           }
         }
       } catch (err) {
@@ -103,11 +114,16 @@ export const Dashboard: React.FC = () => {
 
   // Connect to SSE stream for real-time dispatch events
   useEffect(() => {
-    if (!isOnline || isFloatingCashBlocked) return;
+    if (!isOnline) return;
 
     const sseClient = createSSEClient({
       url: `${BASE_URL}/delivery/stream`,
       events: {
+        floating_cash_update: (payload: any) => {
+          if (payload && payload.floatingCash !== undefined) {
+            setFloatingCash(Number(payload.floatingCash) || 0);
+          }
+        },
         dispatch: (payload: any) => {
           if (isFloatingCashBlocked) return;
           if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
@@ -143,7 +159,7 @@ export const Dashboard: React.FC = () => {
     return () => {
       sseClient.close();
     };
-  }, [isOnline, isFloatingCashBlocked, refreshAvailableOrders, refreshActiveOrders]);
+  }, [isOnline, isFloatingCashBlocked, refreshAvailableOrders, refreshActiveOrders, setFloatingCash]);
 
   return (
     <div className="flex-1 flex flex-col bg-slate-50 min-h-full pb-20 overflow-y-auto w-full relative">

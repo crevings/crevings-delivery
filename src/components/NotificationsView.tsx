@@ -17,99 +17,24 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+import useSWR from 'swr';
+import { fetcher, patch } from '@/api/fetcher';
+
 interface NotificationsViewProps {
   onBack?: () => void;
 }
 
-interface NotificationItem {
-  id: string;
-  type: 'order' | 'promo' | 'system' | 'finance' | 'performance';
-  icon: React.ElementType;
+interface RawNotification {
+  _id: string;
+  id?: string;
+  type?: string;
   title: string;
-  description: string;
-  time: string;
-  image?: string;
-  isNew?: boolean;
+  message?: string;
+  description?: string;
+  read?: boolean;
+  createdAt?: string;
+  data?: any;
 }
-
-const TODAY_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 't1',
-    type: 'order',
-    icon: Check,
-    title: 'Your delivery has been verified',
-    description: 'We have successfully verified your delivery for the PlayStation 5 Pro purchase.',
-    time: '1h ago',
-    isNew: true
-  },
-  {
-    id: 't2',
-    type: 'promo',
-    icon: Zap,
-    title: 'Surge Pricing Is Active!',
-    description: 'Surge pricing is active! Enjoy up to 1.5x earnings on all deliveries right now.',
-    time: '2h ago',
-    image: 'https://images.unsplash.com/photo-1549439602-43ebca2327af?q=80&w=800&auto=format&fit=crop',
-    isNew: true
-  },
-  {
-    id: 't3',
-    type: 'finance',
-    icon: Wallet,
-    title: 'Payout Processed Successfully',
-    description: 'Your weekly payout of ₹12,450.00 has been sent to your registered bank account.',
-    time: '4h ago',
-    isNew: false
-  },
-  {
-    id: 't4',
-    type: 'system',
-    icon: AlertCircle,
-    title: 'Safety Alert: Helmet Check',
-    description: 'Don\'t forget to upload your daily selfie wearing a helmet to stay compliant.',
-    time: '6h ago',
-    isNew: true
-  }
-];
-
-const YESTERDAY_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'y1',
-    type: 'performance',
-    icon: TrendingUp,
-    title: 'Weekly Performance Milestone',
-    description: 'Great job! You achieved a 15% increase in total deliveries completed this week.',
-    time: 'Yesterday',
-    isNew: false
-  },
-  {
-    id: 'y2',
-    type: 'system',
-    icon: Star,
-    title: 'New 5-Star Review Received',
-    description: '"The delivery person was exceptionally polite and arrived much faster than expected!"',
-    time: 'Yesterday',
-    isNew: false
-  },
-  {
-    id: 'y3',
-    type: 'promo',
-    icon: Tag,
-    title: 'Incentive Ended: Weekend Hustle',
-    description: 'Your "Weekend Hustle" incentive has concluded with 84 successful deliveries.',
-    time: 'Yesterday',
-    isNew: false
-  },
-  {
-    id: 'y4',
-    type: 'system',
-    icon: BadgeCheck,
-    title: 'New Feature: AI Insights',
-    description: 'Check out our new AI-powered routing insights to help you grow your earnings.',
-    time: 'Yesterday',
-    isNew: false
-  }
-];
 
 export const NotificationsView: React.FC<NotificationsViewProps> = ({ onBack }) => {
   const navigate = useNavigate();
@@ -119,95 +44,147 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({ onBack }) 
     else navigate('/');
   };
 
-  const renderNotification = (notif: NotificationItem) => (
-    <div 
-      key={notif.id} 
-      className={`p-4 rounded-[20px] transition-all border ${
-        notif.isNew 
-          ? 'bg-blue-50/20 border-blue-100 shadow-sm' 
-          : 'bg-[#FFFFFF] border-slate-100'
-      } relative overflow-hidden`}
-    >
-      <div className="flex gap-3.5 items-start">
-        {/* Icon Container */}
-        <div className={`w-10 h-10 rounded-[14px] flex items-center justify-center shrink-0 border border-slate-100/50 ${
-          notif.type === 'promo' ? 'bg-indigo-50 text-indigo-500' : 
-          notif.type === 'finance' ? 'bg-emerald-50 text-emerald-500' : 
-          notif.type === 'order' ? 'bg-blue-50 text-blue-500' : 
-          'bg-slate-50 text-slate-600'
-        }`}>
-          <notif.icon size={18} />
-        </div>
+  const { data, isLoading, mutate } = useSWR<{
+    success?: boolean;
+    notifications?: RawNotification[];
+    unreadCount?: number;
+  }>('/delivery/notifications', fetcher, {
+    revalidateOnMount: true,
+    refreshInterval: 10000,
+  });
 
-        {/* Text Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex justify-between items-start mb-0.5">
-            <h3 className="text-[13px] font-bold text-slate-900 leading-snug pr-2">
-              {notif.title}
-            </h3>
-            <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap pt-0.5 uppercase tracking-tighter">
-              {notif.time}
-            </span>
-          </div>
-          <p className="text-[12px] font-medium text-slate-500 leading-relaxed mb-2.5">
-            {notif.description}
-          </p>
+  const notifications: RawNotification[] = data?.notifications || [];
 
-          {/* Optional Image */}
-          {notif.image && (
-            <div className="rounded-xl overflow-hidden mb-2 aspect-video w-full max-w-[200px]">
-              <img src={notif.image} alt="Notification media" className="w-full h-full object-cover" />
-            </div>
-          )}
+  const handleMarkAsRead = async (id: string) => {
+    try {
+      await patch(`/delivery/notifications/${id}/read`);
+      mutate();
+    } catch {
+      // non-fatal
+    }
+  };
 
-          {/* New Indicator */}
-          {notif.isNew && (
-            <div className="absolute top-4 right-4 flex items-center">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  const handleMarkAllRead = async () => {
+    try {
+      await patch('/delivery/notifications/read-all');
+      mutate();
+    } catch {
+      // non-fatal
+    }
+  };
+
+  const getIcon = (type?: string) => {
+    switch (type?.toLowerCase()) {
+      case 'order':
+      case 'dispatch':
+        return Check;
+      case 'payout':
+      case 'wallet':
+      case 'finance':
+        return Wallet;
+      case 'surge':
+      case 'promo':
+        return Zap;
+      case 'rating':
+        return Star;
+      default:
+        return BellIcon;
+    }
+  };
+
+  const BellIcon = AlertCircle;
 
   return (
     <div className="min-h-screen bg-[#FFFFFF] animate-in slide-in-from-right duration-300 pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#FFFFFF] px-4 py-4 border-b border-slate-50 flex items-center justify-between">
+      <header className="sticky top-0 z-50 bg-[#FFFFFF] px-4 py-4 border-b border-slate-100 flex items-center justify-between shadow-xs">
         <button 
           onClick={handleBack}
-          className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 active:scale-90 transition-all border border-slate-100"
+          className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 active:scale-90 transition-all border border-slate-100"
         >
           <ArrowLeft size={18} />
         </button>
         <h1 className="text-base font-bold text-slate-900 tracking-tight">Notifications</h1>
-        <div className="w-9"></div>
+        {notifications.some(n => !n.read) ? (
+          <button
+            onClick={handleMarkAllRead}
+            className="text-xs font-bold text-blue-600 hover:text-blue-700 active:scale-95 transition-all"
+          >
+            Mark all read
+          </button>
+        ) : (
+          <div className="w-9"></div>
+        )}
       </header>
 
       {/* Content */}
-      <div className="px-4 py-5 space-y-8">
-        {/* Today Section */}
-        <div>
-          <div className="flex items-center justify-between mb-3 ml-1">
-            <h2 className="text-[15px] font-bold text-slate-900">Today</h2>
-            <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{TODAY_NOTIFICATIONS.filter(n => n.isNew).length} NEW</span>
+      <div className="px-4 py-5 space-y-4">
+        {isLoading ? (
+          <div className="py-16 text-center text-slate-400">
+            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-xs font-medium">Loading notifications...</p>
           </div>
-          <div className="space-y-2.5">
-            {TODAY_NOTIFICATIONS.map(renderNotification)}
-          </div>
-        </div>
+        ) : notifications.length > 0 ? (
+          notifications.map((notif) => {
+            const id = notif._id || notif.id || '';
+            const Icon = getIcon(notif.type);
+            const isUnread = !notif.read;
+            const timeStr = notif.createdAt
+              ? new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : '--';
 
-        {/* Yesterday Section */}
-        <div>
-          <h2 className="text-[15px] font-bold text-slate-900 mb-3 ml-1">Yesterday</h2>
-          <div className="space-y-2.5">
-            {YESTERDAY_NOTIFICATIONS.map(renderNotification)}
+            return (
+              <div 
+                key={id}
+                onClick={() => isUnread && handleMarkAsRead(id)}
+                className={`p-4 rounded-[20px] transition-all border cursor-pointer ${
+                  isUnread 
+                    ? 'bg-blue-50/30 border-blue-100 shadow-xs' 
+                    : 'bg-[#FFFFFF] border-slate-100'
+                } relative overflow-hidden`}
+              >
+                <div className="flex gap-3.5 items-start">
+                  <div className={`w-10 h-10 rounded-[14px] flex items-center justify-center shrink-0 border border-slate-100/50 ${
+                    isUnread ? 'bg-blue-100/50 text-blue-600' : 'bg-slate-50 text-slate-500'
+                  }`}>
+                    <Icon size={18} />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-0.5">
+                      <h3 className="text-[13px] font-bold text-slate-900 leading-snug pr-2">
+                        {notif.title}
+                      </h3>
+                      <span className="text-[9px] font-bold text-slate-400 whitespace-nowrap pt-0.5 uppercase tracking-tighter">
+                        {timeStr}
+                      </span>
+                    </div>
+                    <p className="text-[12px] font-medium text-slate-500 leading-relaxed">
+                      {notif.description || notif.message || ''}
+                    </p>
+                  </div>
+
+                  {isUnread && (
+                    <div className="absolute top-4 right-4 flex items-center">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="py-20 text-center">
+            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+              <Package size={26} />
+            </div>
+            <h3 className="text-sm font-bold text-slate-800">No notifications</h3>
+            <p className="text-xs text-slate-400 mt-1">Updates on payouts, trips, and incentives will appear here.</p>
           </div>
-        </div>
+        )}
       </div>
 
       <footer className="text-center py-6 opacity-20">

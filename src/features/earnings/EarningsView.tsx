@@ -16,12 +16,22 @@ import { usePartnerStore } from '@/app/store';
 import { ComingSoonView } from '@/shared/components/ComingSoonView';
 import { useEarningsSummary } from '@/api/earnings';
 
+import { usePartnerProfile } from '@/api/profile';
+
 export const EarningsView: React.FC = () => {
   const floatingCash = usePartnerStore(s => s.floatingCash);
+  const setFloatingCash = usePartnerStore(s => s.setFloatingCash);
+  const { profile } = usePartnerProfile();
   const { earnings, isLoading } = useEarningsSummary();
   const [selectedFilter, setSelectedFilter] = useState('Today');
   const [activeActionSheet, setActiveActionSheet] = useState<'floating_cash' | null>(null);
   const [comingSoonTitle, setComingSoonTitle] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (profile?.floatingCash !== undefined) {
+      setFloatingCash(Number(profile.floatingCash) || 0);
+    }
+  }, [profile?.floatingCash, setFloatingCash]);
 
   const activePeriodData = useMemo(() => {
     if (!earnings) {

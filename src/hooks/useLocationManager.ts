@@ -72,24 +72,36 @@ export function useLocationManager(isLoggedIn: boolean) {
     } catch (err: any) {
       const isDenied = err instanceof LocationError && err.code === 1;
       const isGpsOff = err instanceof LocationError && err.code === 4;
+      const isTimeout = err?.code === 3 || (err?.message && err.message.toLowerCase().includes('timeout'));
 
-      let msg = err?.message || 'Location access is required to receive delivery orders.';
-      if (isDenied) {
-        msg = isCapacitorNative()
+      // Timeouts and transient errors should NOT block the UI with the
+      // full-screen location gate — they resolve on retry.  Only hard
+      // permission denial or GPS-off actually prevent the app from working.
+      if (isTimeout || (!isDenied && !isGpsOff)) {      // Non-blocking: keep existing coordinates if we already have them,
+      // and let watchPosition / next poll retry silently.
+      } else if (isDenied) {
+        const msg = isCapacitorNative()
           ? 'Location permission is denied. Please enable location permission in app settings.'
           : 'Location is blocked. Please tap the lock icon in your browser address bar and set Location to Allow.';
+        setLocationState((prev) => ({
+          ...prev,
+          hasPermission: false,
+          latitude: null,
+          longitude: null,
+          errorMsg: msg,
+          isChecking: false,
+          isGpsOff: false,
+        }));
       } else if (isGpsOff) {
-        msg = 'Device GPS is turned off. Please turn on Location in your device quick settings.';
+        setLocationState((prev) => ({
+          ...prev,
+          latitude: null,
+          longitude: null,
+          errorMsg: 'Device GPS is turned off. Please turn on Location in your device quick settings.',
+          isChecking: false,
+          isGpsOff: true,
+        }));
       }
-
-      setLocationState({
-        hasPermission: !isDenied,
-        latitude: null,
-        longitude: null,
-        errorMsg: msg,
-        isChecking: false,
-        isGpsOff,
-      });
     }
   }, [maybeSyncLocationToBackend]);
 

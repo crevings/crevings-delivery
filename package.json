@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:android": "npm run build && npx cap sync && npx cap update android && npx cap open android",
+    "build:android": "npm run build && npx cap sync && npx @capacitor/assets generate --android && npx cap open android",
     "bundle:android": "npm run build && npx cap sync && cd android && .\\gradlew.bat bundleRelease",
     "cap:sync": "npx cap sync",
     "cap:update": "npx cap update",
@@ -23,6 +23,7 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.0",
     "@capacitor/geolocation": "^8.2.2",
+    "@capacitor/push-notifications": "^8.1.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.561.0",
     "motion": "^12.38.0",

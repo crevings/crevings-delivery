@@ -18,26 +18,26 @@ export const SupportView: React.FC<SupportViewProps> = ({ onBack }) => {
   const [message, setMessage] = useState('');
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const [chatMessages, setChatMessages] = useState([
-    { id: 1, text: 'Hi there! How can we help you today with your restaurant?', sender: 'agent', time: '10:00 AM' }
+    { id: 1, text: 'Hi partner! How can our Delivery Support Team assist you today?', sender: 'agent', time: '10:00 AM' }
   ]);
 
   const faqs = [
-    { question: 'How do I onboard my restaurant?', answer: 'Learn the step-by-step process to get your restaurant up and running by navigating to the Profile section and tapping "Add Outlet". Fill in all physical location details and attach required business documents.', category: 'Getting Started' },
-    { question: 'What are the payment settlement times?', answer: 'Payments are settled within 24-48 business hours to your verified bank account. Ensure your KYC status is approved in the Business Documents tab.', category: 'Finance' },
-    { question: 'How to manage staff permissions?', answer: 'Go to Staff Management in the menu to add new roles. You can invite your team using their phone numbers and grant specific dashboard access like purely inventory or finance.', category: 'Team' },
-    { question: 'How do I temporarily pause orders?', answer: 'Use the prominent toggle control at the top right of your main dashboard. This lets you pause incoming online orders for specific durations when the kitchen is overwhelmed.', category: 'Operations' },
+    { question: 'When are delivery earnings paid out?', answer: 'Earnings and tips are calculated daily and settled weekly directly to your verified bank account every Monday.', category: 'Payouts' },
+    { question: 'What should I do if a customer is unreachable?', answer: 'Call the customer up to 3 times via the order screen. If there is no response after 5 minutes at the destination, tap "Customer Unreachable" in order details for dispatch guidance.', category: 'Deliveries' },
+    { question: 'How is Floating Cash (COD) settled?', answer: 'Cash collected on delivery orders adds to your Floating Cash balance. When it reaches the limit, you can deposit it via UPI/Bank transfer from your Earnings dashboard.', category: 'Floating Cash' },
+    { question: 'How do I update my vehicle or driving license?', answer: 'Go to Profile > Vehicle Details to update your vehicle type, registration number, or license. Updates are verified by our fleet team within 2 hours.', category: 'Profile' },
   ];
 
   const tickets = [
-    { id: '#TCK-8890', title: 'Payment settlement delayed', date: 'Today, 09:30 AM', status: 'In Progress' },
-    { id: '#TCK-8842', title: 'Need help updating GST details', date: 'Yesterday, 02:15 PM', status: 'Resolved' },
+    { id: '#TCK-DP-104', title: 'Trip distance incentive query', date: 'Today, 09:30 AM', status: 'In Progress' },
+    { id: '#TCK-DP-101', title: 'Bank account verification completed', date: 'Yesterday, 02:15 PM', status: 'Resolved' },
   ];
 
   const suggestions = [
     "Where is my payout?",
-    "How to pause orders?",
-    "Update bank details",
-    "Onboarding help"
+    "Customer unreachable",
+    "Floating cash deposit",
+    "Change vehicle details"
   ];
 
   const handleSendMessage = (text: string) => {

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, ChevronLeft } from 'lucide-react';
+import { X, ChevronLeft, MapPinOff, AlertTriangle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { usePartnerStore } from '@/app/store';
 import { toggleOnline } from '@/api/partner';
+import { fetcher } from '@/api/fetcher';
 import { ROUTES } from '@/config/routes';
 
 interface HeaderProps {
@@ -20,6 +21,9 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
   const isOnline = usePartnerStore(s => s.isOnline);
   const setIsOnline = usePartnerStore(s => s.setIsOnline);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isVerifyingZone, setIsVerifyingZone] = useState(false);
+  const [outsideZoneError, setOutsideZoneError] = useState<string | null>(null);
+  const [headerError, setHeaderError] = useState<string | null>(null);
 
   const handleBack = () => {
     if (window.history.length > 1) {
@@ -30,20 +34,39 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
   };
 
   const handleToggleClick = () => {
-    if (!isOnline) {
-      if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          () => {
-            setShowConfirm(true);
-          },
-          (err) => {
-            alert('Location access is required to go Online and receive delivery orders. Please enable device location.');
-          },
-          { enableHighAccuracy: true, timeout: 8000 }
-        );
-        return;
-      }
+    if (isOnline) {
+      setShowConfirm(true);
+      return;
     }
+
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+      setIsVerifyingZone(true);
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            const res: any = await fetcher(`/zones/check?lat=${latitude}&lng=${longitude}`);
+            if (res && res.success === true && res.serviceable === false) {
+              setIsVerifyingZone(false);
+              setOutsideZoneError('Crevings is not available in your current area. You are currently outside our active delivery zones. Move into a serviceable zone to go online.');
+              return;
+            }
+          } catch {
+            // Fail open on check error
+          }
+          setIsVerifyingZone(false);
+          setShowConfirm(true);
+        },
+        (err) => {
+          setIsVerifyingZone(false);
+          setHeaderError('Location access is required to go Online and receive delivery orders. Please enable device location.');
+          setTimeout(() => setHeaderError(null), 5000);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+      return;
+    }
+
     setShowConfirm(true);
   };
 
@@ -58,13 +81,23 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
         // non-fatal
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to update availability status');
+      setHeaderError(err.message || 'Failed to update availability status');
+      setTimeout(() => setHeaderError(null), 5000);
     }
     setShowConfirm(false);
   };
 
   return (
     <>
+      {headerError && (
+        <div className="fixed top-2 left-4 right-4 z-[9999] p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200 max-w-md mx-auto shadow-lg">
+          <AlertTriangle size={16} className="text-red-500 shrink-0" />
+          <span className="text-[13px] font-semibold text-red-600">{headerError}</span>
+          <button onClick={() => setHeaderError(null)} className="ml-auto text-red-400 hover:text-red-600">
+            <X size={14} />
+          </button>
+        </div>
+      )}
       <header className="sticky top-0 z-40 bg-[#FFFFFF] border-b border-slate-100 flex items-center justify-between h-[64px] px-4 w-full max-w-md mx-auto lg:max-w-none lg:px-6 lg:rounded-2xl lg:border lg:border-slate-200 lg:shadow-sm lg:static lg:h-[80px]">
         {/* Left side: Back Button & Page Title */}
         <div className="flex items-center gap-2 min-w-0 pr-2">
@@ -105,6 +138,27 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
           </div>
         </div>
       </header>
+
+      {/* Outside Serviceable Zone Modal */}
+      {outsideZoneError && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-6 text-center animate-in zoom-in-95 duration-200 shadow-2xl">
+            <div className="w-16 h-16 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto mb-4 border border-red-100">
+              <MapPinOff size={28} />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-2">Outside Service Area</h3>
+            <p className="text-xs text-slate-500 leading-relaxed mb-6">
+              {outsideZoneError}
+            </p>
+            <button
+              onClick={() => setOutsideZoneError(null)}
+              className="w-full h-12 bg-slate-900 hover:bg-black text-white font-bold text-sm rounded-xl active:scale-95 transition-transform"
+            >
+              Understood
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Bottom Sheet */}
       {showConfirm && (
