@@ -126,6 +126,12 @@ export const Dashboard: React.FC = () => {
           console.log('[SSE] Received targeted DISPATCH_REQUEST:', payload);
           if (isFloatingCashBlocked) return;
           if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
+            // Dedup: don't overwrite existing popup — driver is already viewing one.
+            // The busy lock + SSE status gate prevent double-pings at the backend level.
+            if (showNewOrderAlert) {
+              console.log('[SSE] Ignoring DISPATCH_REQUEST — popup already showing:', payload.orderId);
+              return;
+            }
             const formatted: Order = {
               id: payload.orderId,
               customer: payload.customerName || 'Customer',
@@ -255,7 +261,14 @@ export const Dashboard: React.FC = () => {
             try {
               if (!rawId.startsWith('DEL-')) {
                 await respondToDispatch(rawId, 'ACCEPT');
-                await acceptOrder(rawId);
+                const acceptRes: any = await acceptOrder(rawId);
+                if (acceptRes && acceptRes.success === false) {
+                  alert(acceptRes.message || "Order is no longer available.");
+                  setPendingOrder(null);
+                  setShowNewOrderAlert(false);
+                  refreshActiveOrders?.();
+                  return;
+                }
               }
             } catch (err: any) {
               console.warn('Accept order API warning:', err.message);

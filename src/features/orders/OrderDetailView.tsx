@@ -299,7 +299,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       setCurrentStatus('OUT FOR DELIVERY');
     } catch (err: any) {
       console.error("Pickup OTP verification error:", err);
-      setOtpError("Network error. Please check your connection.");
+      setOtpError(err?.message || "Invalid Restaurant Pickup PIN");
       setIsVerifying(false);
       return;
     } finally {
@@ -346,7 +346,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
       setCurrentStatus('COMPLETED');
     } catch (err: any) {
       console.error("Delivery OTP verification error:", err);
-      setOtpError("Network error. Please check your connection.");
+      setOtpError(err?.message || "Invalid Customer Delivery PIN");
       setIsVerifying(false);
       return;
     } finally {

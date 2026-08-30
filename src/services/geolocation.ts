@@ -87,18 +87,16 @@ const getBrowserPosition = (): Promise<GeoPosition> =>
         if (err.code === 1) {
           reject(new LocationError(err.message || "Location permission denied", 1));
         } else if (err.code === 2) {
-          reject(
-            new LocationError(
-              "Your device's GPS appears to be turned off. Please turn on Location Services.",
-              4
-            )
-          );
+          // If message explicitly says disabled/off, treat as GPS off, otherwise position unavailable
+          const msg = (err.message || "").toLowerCase();
+          const isOff = msg.includes("disabled") || msg.includes("turned off");
+          reject(new LocationError(err.message || "Position unavailable", isOff ? 4 : 2));
         } else {
           const code: LocationErrorCode = err.code === 3 ? 3 : 2;
           reject(new LocationError(err.message || "Could not determine location", code));
         }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
   });
 
@@ -118,11 +116,13 @@ export const requestLocationAndGetPosition = async (): Promise<GeoPosition> => {
       if (perm.location !== "granted") {
         throw new LocationError("Location permission denied", 1);
       }
+      
+      // 1. Try high-accuracy first with a 30s cache tolerance for instant startup
       try {
         const pos = await Geolocation.getCurrentPosition({
           enableHighAccuracy: true,
           timeout: 10000,
-          maximumAge: 0
+          maximumAge: 30000
         });
         return {
           lat: pos.coords.latitude,
@@ -131,11 +131,43 @@ export const requestLocationAndGetPosition = async (): Promise<GeoPosition> => {
           speed: pos.coords.speed,
           heading: pos.coords.heading
         };
-      } catch {
-        throw new LocationError(
-          "Your device's GPS is turned off or unavailable. Please turn on Location Services.",
-          4
-        );
+      } catch (firstErr: any) {
+        const firstMsg = (firstErr?.message || "").toLowerCase();
+        // If explicitly disabled in settings, fail immediately with GPS off
+        if (firstMsg.includes("disabled") || firstMsg.includes("provider")) {
+          throw new LocationError(
+            "Your device's GPS is turned off. Please turn on Location Services.",
+            4
+          );
+        }
+
+        // 2. Fallback to network/fused location (enableHighAccuracy: false) if satellite GPS is slow
+        try {
+          const fallbackPos = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 60000
+          });
+          return {
+            lat: fallbackPos.coords.latitude,
+            lng: fallbackPos.coords.longitude,
+            accuracy: fallbackPos.coords.accuracy,
+            speed: fallbackPos.coords.speed,
+            heading: fallbackPos.coords.heading
+          };
+        } catch (secondErr: any) {
+          const secondMsg = (secondErr?.message || "").toLowerCase();
+          if (secondMsg.includes("disabled") || secondMsg.includes("provider")) {
+            throw new LocationError(
+              "Your device's GPS is turned off. Please turn on Location Services.",
+              4
+            );
+          }
+          if (secondMsg.includes("timeout") || secondErr?.code === 3) {
+            throw new LocationError("Location request timed out. Retrying in background...", 3);
+          }
+          throw new LocationError(secondErr?.message || "Location temporarily unavailable", 2);
+        }
       }
     } catch (e) {
       if (e instanceof LocationError) throw e;
@@ -145,12 +177,8 @@ export const requestLocationAndGetPosition = async (): Promise<GeoPosition> => {
       try {
         return await getBrowserPosition();
       } catch (browserErr) {
-        throw browserErr instanceof LocationError
-          ? browserErr
-          : new LocationError(
-              "Your device's GPS is turned off. Please turn on Location Services.",
-              4
-            );
+        if (browserErr instanceof LocationError) throw browserErr;
+        throw new LocationError("Location temporarily unavailable", 2);
       }
     }
   }
