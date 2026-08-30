@@ -5,16 +5,17 @@ interface PartnerState {
   isPaused: boolean;
   rushHour: boolean;
   floatingCash: number;
-  selectedBranch: any;
-  outletServices: any;
+  // SECURITY: Replace 'any' with proper types
+  selectedBranch: Record<string, unknown> | null;
+  outletServices: Record<string, unknown> | null;
   gigStartTime: Date | null;
   gigEndTime: Date | null;
   setIsOnline: (v: boolean) => void;
   setIsPaused: (v: boolean) => void;
   setRushHour: (v: boolean) => void;
   setFloatingCash: (v: number) => void;
-  setSelectedBranch: (branch: any) => void;
-  setOutletServices: (services: any) => void;
+  setSelectedBranch: (branch: Record<string, unknown> | null) => void;
+  setOutletServices: (services: Record<string, unknown> | null) => void;
   setGigStartTime: (time: Date | null) => void;
   setGigEndTime: (time: Date | null) => void;
 }

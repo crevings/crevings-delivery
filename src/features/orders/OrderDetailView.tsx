@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { Order } from '@/types';
 import { ChatView } from './ChatView';
 
-import { BASE_URL } from '@/api/fetcher';
+import { post } from '@/api/fetcher';
 import { openMapsNavigation } from '@/utils/navigation';
 import { updateOrderStatus } from '@/api/orders';
 
@@ -286,14 +286,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     setOtpError(null);
     setIsVerifying(true);
     try {
-      const res = await fetch(`${BASE_URL}/delivery/orders/${realOrderId}/verify-pickup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ pin })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+      // SECURITY: Use authenticated fetcher instead of raw fetch
+      const data = await post<{ success: boolean; message?: string }>(
+        `/delivery/orders/${realOrderId}/verify-pickup`,
+        { pin }
+      );
+      if (!data.success) {
         setOtpError(data.message || "Invalid Restaurant Pickup PIN");
         setIsVerifying(false);
         return;
@@ -335,14 +333,12 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     setOtpError(null);
     setIsVerifying(true);
     try {
-      const res = await fetch(`${BASE_URL}/delivery/orders/${realOrderId}/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ pin })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+      // SECURITY: Use authenticated fetcher instead of raw fetch
+      const data = await post<{ success: boolean; message?: string }>(
+        `/delivery/orders/${realOrderId}/complete`,
+        { pin }
+      );
+      if (!data.success) {
         setOtpError(data.message || "Invalid Customer Delivery PIN");
         setIsVerifying(false);
         return;

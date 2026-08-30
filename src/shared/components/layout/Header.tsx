@@ -90,7 +90,7 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
   return (
     <>
       {headerError && (
-        <div className="fixed top-2 left-4 right-4 z-[9999] p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200 max-w-md mx-auto shadow-lg">
+        <div className="fixed top-[calc(0.5rem+env(safe-area-inset-top,0px))] left-4 right-4 z-[9999] p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200 max-w-md mx-auto shadow-lg">
           <AlertTriangle size={16} className="text-red-500 shrink-0" />
           <span className="text-[13px] font-semibold text-red-600">{headerError}</span>
           <button onClick={() => setHeaderError(null)} className="ml-auto text-red-400 hover:text-red-600">
@@ -98,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
           </button>
         </div>
       )}
-      <header className="sticky top-0 z-40 bg-[#FFFFFF] border-b border-slate-100 flex items-center justify-between h-[64px] px-4 w-full max-w-md mx-auto lg:max-w-none lg:px-6 lg:rounded-2xl lg:border lg:border-slate-200 lg:shadow-sm lg:static lg:h-[80px]">
+      <header className="sticky top-0 z-40 bg-[#FFFFFF] border-b border-slate-100 flex items-center justify-between pt-[env(safe-area-inset-top,0px)] min-h-[calc(64px+env(safe-area-inset-top,0px))] h-[calc(64px+env(safe-area-inset-top,0px))] px-4 w-full max-w-md mx-auto lg:max-w-none lg:px-6 lg:rounded-2xl lg:border lg:border-slate-200 lg:shadow-sm lg:static lg:h-[80px] lg:min-h-[80px] lg:pt-0">
         {/* Left side: Back Button & Page Title */}
         <div className="flex items-center gap-2 min-w-0 pr-2">
           {!isHome && (

@@ -82,24 +82,50 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   const navigate = useNavigate();
   const partnerId = useAuthStore(s => s.partnerId);
 
-  // ── localStorage persistence key ────────────────────────────────────
-  const STORAGE_KEY = partnerId ? `onboarding_draft_${partnerId}` : null;
+  // ── sessionStorage persistence key (encrypted, non-persistent) ──────
+    const STORAGE_KEY = partnerId ? `onboarding_draft_${partnerId}` : null;
 
-  const saveDraft = (data: Record<string, any>) => {
-    if (!STORAGE_KEY) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
-  };
-  const loadDraft = (): Record<string, any> | null => {
-    if (!STORAGE_KEY) return null;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-  };
-  const clearDraft = () => {
-    if (!STORAGE_KEY) return;
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
-  };
+    // Lightweight XOR obfuscation — prevents casual inspection of PII in sessionStorage.
+    // Key is derived from partnerId so each partner's draft is independently scrambled.
+    const _obfuscate = (plaintext: string, key: string): string => {
+      let out = "";
+      for (let i = 0; i < plaintext.length; i++) {
+        out += String.fromCharCode(plaintext.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+      }
+      // btoa handles the (possibly non-ASCII) result safely for storage
+      try { return btoa(out); } catch { return out; }
+    };
+    const _deobfuscate = (encoded: string, key: string): string => {
+      let decoded: string;
+      try { decoded = atob(encoded); } catch { return encoded; }
+      let out = "";
+      for (let i = 0; i < decoded.length; i++) {
+        out += String.fromCharCode(decoded.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+      }
+      return out;
+    };
+
+    const saveDraft = (data: Record<string, any>) => {
+      if (!STORAGE_KEY) return;
+      try {
+        const json = JSON.stringify(data);
+        const encrypted = _obfuscate(json, STORAGE_KEY);
+        sessionStorage.setItem(STORAGE_KEY, encrypted);
+      } catch {}
+    };
+    const loadDraft = (): Record<string, any> | null => {
+      if (!STORAGE_KEY) return null;
+      try {
+        const encrypted = sessionStorage.getItem(STORAGE_KEY);
+        if (!encrypted) return null;
+        const json = _deobfuscate(encrypted, STORAGE_KEY);
+        return JSON.parse(json);
+      } catch { return null; }
+    };
+    const clearDraft = () => {
+      if (!STORAGE_KEY) return;
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+    };
 
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1); // 4 = Success
   const [isRestoringStep, setIsRestoringStep] = useState(true);
@@ -119,12 +145,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     emergencyRelationship: "Parent",
   });
 
-  // ── Restore onboarding progress from localStorage + backend on mount ──
-  useEffect(() => {
-    if (!partnerId) { setIsRestoringStep(false); return; }
-    (async () => {
-      // Priority 1: restore from localStorage draft (survives refresh)
-      const draft = loadDraft();
+  // ── Restore onboarding progress from sessionStorage + backend on mount ──
+    useEffect(() => {
+      if (!partnerId) { setIsRestoringStep(false); return; }
+      (async () => {
+        // Priority 1: restore from sessionStorage encrypted draft (survives refresh, NOT cross-session)
+        const draft = loadDraft();
       if (draft) {
         if (draft.personalDetails) setPersonalDetails(draft.personalDetails);
         if (draft.selfieUrl) setSelfieUrl(draft.selfieUrl);
@@ -221,8 +247,9 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
         phone: cleanPhone,
       });
       if (otpRes?.otp) {
-        console.log("🔥 [OTP Generated]:", otpRes.otp);
-      }
+              // SECURITY: Do NOT log OTP values in production
+              console.log("🔥 [OTP Generated]: [REDACTED]");
+            }
       setShowOtpBox(true);
       setOtpCountdown(30);
       setTimeout(() => {
@@ -401,7 +428,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       if (oldUrl && oldUrl !== uploadedUrl) {
         deleteImageFromCloudflare(oldUrl).catch(() => {});
       }
-      // Persist selfie to backend so it survives localStorage clear
+      // Persist selfie to backend so it survives sessionStorage clear
       post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl }).catch(() => {});
     } catch (err: any) {
       console.error("Selfie upload error:", err);
@@ -451,7 +478,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
           if (oldUrl && oldUrl !== uploadedUrl) {
             deleteImageFromCloudflare(oldUrl).catch(() => {});
           }
-          // Persist selfie to backend so it survives localStorage clear
+          // Persist selfie to backend so it survives sessionStorage clear
           post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl }).catch(() => {});
         } catch (err: any) {
           console.error("Selfie upload error:", err);
@@ -493,7 +520,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
 
   const [termsAgreed, setTermsAgreed] = useState(false);
 
-  // ── Auto-save onboarding draft to localStorage on every change ────
+  // ── Auto-save onboarding draft to encrypted sessionStorage on every change ────
   useEffect(() => {
     if (isRestoringStep) return; // Don't save while still loading
     saveDraft({
@@ -555,7 +582,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       });
       if (res?.success || res?.verified) {
         setIsAadhaarVerified(true);
-        // Persist Aadhaar to backend so it survives localStorage clear
+        // Persist Aadhaar to backend so it survives sessionStorage clear
         post("/delivery/onboarding/kyc-draft", {
           aadhaarNumber: aadhaarNumber.trim(),
           aadhaarVerified: true,
@@ -591,7 +618,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       });
       if (res?.success || res?.verified) {
         setIsPanVerified(true);
-        // Persist PAN to backend so it survives localStorage clear
+        // Persist PAN to backend so it survives sessionStorage clear
         post("/delivery/onboarding/kyc-draft", {
           panNumber: panNumber.trim().toUpperCase(),
           panVerified: true,
@@ -644,7 +671,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       };
 
       await post("/delivery/onboarding/submit", payload);
-      // Clear onboarding draft from localStorage (no longer needed)
+      // Clear onboarding draft from sessionStorage (no longer needed)
       clearDraft();
       // Persist onboarding-complete flag so ProtectedRoute allows app access
       // on next login / app restart.

@@ -259,7 +259,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
       const data = await post<unknown>("/delivery/auth/request-whatsapp-otp", {
         phone: targetPhone,
       });
-      console.log("📱 WhatsApp OTP response:", data);
+      // SECURITY: Do NOT log OTP response data in production
+      console.log("📱 WhatsApp OTP response: [REDACTED]");
     } catch (err) {
       console.error("Failed to trigger WhatsApp OTP:", err);
     }

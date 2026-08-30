@@ -23,9 +23,23 @@ void initPushNotifications();
 const token = sessionStorage.getItem('delivery_auth_token');
 
 // Optimistically restore partner identity if present in sessionStorage while SWR verifies cookie/token
-let persistedPartnerData: any = {};
+interface PartnerData {
+  referenceId?: string;
+  id?: string;
+  role?: string;
+  email?: string;
+  name?: string;
+  phone?: string;
+}
+let persistedPartnerData: PartnerData = {};
 try {
-  persistedPartnerData = JSON.parse(sessionStorage.getItem('delivery_partner_data') || '{}');
+  const raw = sessionStorage.getItem('delivery_partner_data');
+  if (raw) {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      persistedPartnerData = parsed as PartnerData;
+    }
+  }
 } catch {
   persistedPartnerData = {};
 }

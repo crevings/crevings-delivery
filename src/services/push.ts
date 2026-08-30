@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { PushNotifications, ActionPerformed, PushNotificationSchema, Token } from "@capacitor/push-notifications";
-import { BASE_URL } from "@/api/fetcher";
+import { post, del } from "@/api/fetcher";
 
 let isPushInitialized = false;
 let registeredToken: string | null = null;
@@ -9,14 +9,21 @@ let registeredToken: string | null = null;
  * Initialize Firebase Cloud Messaging push notifications for the delivery partner app.
  *
  * Flow:
- * 1. Checks if running on native mobile device (Capacitor Android / iOS).
- * 2. Prompts user for notification permission if not yet granted.
+ * 1. Checks if running on native mobile device (Capacitor Android / iOS) or Web.
+ * 2. Prompts user for notification permission if not yet granted on startup.
  * 3. Registers device with FCM and receives token.
  * 4. Persists token to backend so background new order & dispatch notifications reach driver.
  * 5. Sets up listeners for foreground and action events.
  */
 export async function initPushNotifications(): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        try {
+          await Notification.requestPermission();
+        } catch {}
+      }
+    }
     return;
   }
 
@@ -28,7 +35,7 @@ export async function initPushNotifications(): Promise<void> {
   try {
     let permStatus = await PushNotifications.checkPermissions();
 
-    if (permStatus.receive === "prompt") {
+    if (permStatus.receive !== "granted") {
       permStatus = await PushNotifications.requestPermissions();
     }
 
@@ -42,10 +49,12 @@ export async function initPushNotifications(): Promise<void> {
 
     // On successful registration
     await PushNotifications.addListener("registration", (token: Token) => {
-      console.log("🔥 [FCM] Delivery Token received:", token.value);
+      // SECURITY: Do NOT log FCM token values in production
+      console.log("🔥 [FCM] Delivery Token received: [REDACTED]");
       registeredToken = token.value;
       try {
-        localStorage.setItem("delivery_fcm_token", token.value);
+        // SECURITY: Use sessionStorage instead of localStorage for sensitive tokens
+        sessionStorage.setItem("delivery_fcm_token", token.value);
       } catch {}
       void persistToken(token.value);
     });
@@ -64,23 +73,32 @@ export async function initPushNotifications(): Promise<void> {
     await PushNotifications.addListener("pushNotificationActionPerformed", (action: ActionPerformed) => {
       console.log("[Push] Notification tapped:", action);
     });
+
+    // If we already have a saved token from previous session, sync it to backend
+    const savedToken = getSavedFcmToken();
+    if (savedToken) {
+      void persistToken(savedToken);
+    }
   } catch (err: any) {
     console.error("[Push] Failed to initialize push notifications:", err?.message || err);
+  }
+}
+
+/**
+ * Resync FCM token to backend (call after login/token refresh)
+ */
+export async function syncDeviceToken(): Promise<void> {
+  const token = registeredToken || getSavedFcmToken();
+  if (token) {
+    await persistToken(token);
   }
 }
 
 async function persistToken(token: string): Promise<void> {
   try {
     const platform = Capacitor.getPlatform();
-    const res = await fetch(`${BASE_URL}/delivery/notifications/devices`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, platform }),
-    });
-    if (!res.ok) {
-      console.warn(`[Push] Token persist returned status: ${res.status}`);
-    }
+    // SECURITY: Use authenticated fetcher instead of raw fetch
+    await post("/delivery/notifications/devices", { token, platform });
   } catch (err) {
     console.warn("[Push] Failed to persist delivery FCM token:", err);
   }
@@ -96,12 +114,8 @@ export async function unregisterPushNotifications(): Promise<void> {
   if (!token) return;
 
   try {
-    await fetch(`${BASE_URL}/delivery/notifications/devices`, {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
+    // SECURITY: Use authenticated fetcher instead of raw fetch
+    await del("/delivery/notifications/devices", { body: { token } });
   } catch (err) {
     console.warn("[Push] Failed to unregister delivery FCM token:", err);
   }
@@ -109,8 +123,10 @@ export async function unregisterPushNotifications(): Promise<void> {
 
 export function getSavedFcmToken(): string | null {
   try {
-    return localStorage.getItem("delivery_fcm_token");
+    // SECURITY: Use sessionStorage instead of localStorage for sensitive tokens
+    return sessionStorage.getItem("delivery_fcm_token");
   } catch {
     return null;
   }
 }
+

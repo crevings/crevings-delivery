@@ -26,8 +26,8 @@ export const BottomNav: React.FC<BottomNavProps> = () => {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#FFFFFF] border-t border-[#E5E7EB] h-[64px] pb-[env(safe-area-inset-bottom)] lg:hidden">
-      <div className="flex relative items-center h-full w-full max-w-md mx-auto">
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#FFFFFF] border-t border-[#E5E7EB] min-h-[64px] pb-[env(safe-area-inset-bottom,0px)] lg:hidden">
+      <div className="flex relative items-center h-[64px] w-full max-w-md mx-auto">
         {/* Smooth Switching Indicator */}
         <div 
           className="absolute top-2 bottom-2 transition-transform duration-300 ease-out pointer-events-none flex justify-center items-center"

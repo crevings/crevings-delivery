@@ -4,6 +4,8 @@ import { UNAUTHORIZED_EVENT } from '@/api/fetcher';
 import { useAuthStore } from '@/app/store';
 import { clearSecureStorage, setSecureToken } from '@/utils/security/secureStorage';
 
+import { syncDeviceToken, unregisterPushNotifications } from '@/services/push';
+
 interface AuthContextValue {
   isAuthenticated: boolean;
   isLoadingAuth: boolean;
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // non-fatal
       }
+      void syncDeviceToken();
     } else if (error || (data && !data.success)) {
       useAuthStore.setState({
         isLoggedIn: false,
@@ -84,11 +87,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // non-fatal
       }
     }
+    void syncDeviceToken();
     mutate();
   };
 
   const logout = async () => {
     try {
+      await unregisterPushNotifications().catch(() => {});
       await apiLogout().catch(() => {});
     } finally {
       clearSecureStorage();

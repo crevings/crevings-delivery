@@ -55,7 +55,7 @@ describe('Delivery Auth Flows', () => {
         },
       });
 
-      const result = await mockFetcher('/delivery/auth/verify-token');
+      const result: any = await mockFetcher('/delivery/auth/verify-token');
       
       expect(result.success).toBe(true);
       expect(result.user?.role).toBe('DELIVERY_PARTNER');
@@ -69,7 +69,7 @@ describe('Delivery Auth Flows', () => {
         message: 'Invalid token',
       });
 
-      const result = await mockFetcher('/delivery/auth/verify-token');
+      const result: any = await mockFetcher('/delivery/auth/verify-token');
       
       expect(result.success).toBe(false);
       expect(result.message).toBe('Invalid token');
@@ -85,7 +85,7 @@ describe('Delivery Auth Flows', () => {
       });
 
       const payload = { email: 'driver@example.com', otp: '123456' };
-      const result = await mockPost('/delivery/auth/verify-otp', payload);
+      const result: any = await mockPost('/delivery/auth/verify-otp', payload);
 
       expect(mockPost).toHaveBeenCalledWith('/delivery/auth/verify-otp', payload);
       expect(result.success).toBe(true);
@@ -100,7 +100,7 @@ describe('Delivery Auth Flows', () => {
       });
 
       const payload = { email: 'driver@example.com', otp: '000000' };
-      const result = await mockPost('/delivery/auth/verify-otp', payload);
+      const result: any = await mockPost('/delivery/auth/verify-otp', payload);
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('OTP_INCORRECT');
@@ -114,7 +114,7 @@ describe('Delivery Auth Flows', () => {
       });
 
       const payload = { phone: '+911234567890', otp: '123456' };
-      const result = await mockPost('/delivery/auth/verify-otp', payload);
+      const result: any = await mockPost('/delivery/auth/verify-otp', payload);
 
       expect(result.success).toBe(true);
     });
@@ -127,7 +127,7 @@ describe('Delivery Auth Flows', () => {
       });
 
       const payload = { email: 'driver@example.com', password: 'password123' };
-      const result = await mockPost('/delivery/auth/verify-otp', payload);
+      const result: any = await mockPost('/delivery/auth/verify-otp', payload);
 
       expect(result.success).toBe(true);
     });
@@ -177,7 +177,7 @@ describe('Delivery Auth Flows', () => {
       });
 
       const payload = { email: 'driver@example.com', otp: '123456' };
-      const result = await mockPost('/delivery/auth/verify-otp', payload);
+      const result: any = await mockPost('/delivery/auth/verify-otp', payload);
 
       expect(result.success).toBe(false);
       expect(result.message).toBe('Internal Server Error');

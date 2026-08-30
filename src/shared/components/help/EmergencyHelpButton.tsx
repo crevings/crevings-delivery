@@ -50,7 +50,7 @@ export const EmergencyHelpButton: React.FC = () => {
   return (
     <>
       {/* Floating Action Button */}
-      <div className="fixed bottom-20 right-4 z-40 lg:bottom-8 lg:right-8">
+      <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] right-4 z-40 lg:bottom-8 lg:right-8">
         <button
           onClick={() => setIsOpen(true)}
           className="group relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-tr from-red-600 to-rose-500 text-white shadow-lg shadow-red-500/25 active:scale-95 transition-transform duration-200 focus:outline-none"

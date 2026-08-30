@@ -26,7 +26,7 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
           <Header />
         </div>
 
-        <main className="flex-1 max-w-md mx-auto w-full relative lg:max-w-none lg:w-full flex flex-col pb-24 lg:pb-8">
+        <main className="flex-1 max-w-md mx-auto w-full relative lg:max-w-none lg:w-full flex flex-col pb-[calc(6rem+env(safe-area-inset-bottom,0px))] lg:pb-8">
           {children || <Outlet />}
         </main>
       </div>

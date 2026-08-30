@@ -11,7 +11,7 @@ import { OrderCard } from './components/OrderCard';
 import { Order } from '@/types';
 import { isTerminalStatus } from '@/lib/orderStatus';
 
-import { acceptOrder, mapActiveOrder, respondToDispatch, useActiveOrders, useAvailableOrders } from '@/api/orders';
+import { acceptOrder, mapActiveOrder, respondToDispatch, useActiveOrders } from '@/api/orders';
 import { toggleOnline, getPartnerProfile } from '@/api/partner';
 import { BASE_URL } from '@/api/fetcher';
 import { useOrdersStore, usePartnerStore } from '@/app/store';
@@ -95,16 +95,6 @@ export const Dashboard: React.FC = () => {
     setOrders(backendActiveOrders.map(mapActiveOrder));
   }, [backendActiveOrders, activeOrdersError, setOrders]);
 
-  // SWR available orders polling when online and not blocked by floating cash
-  const { availableOrder, mutate: refreshAvailableOrders } = useAvailableOrders(isOnline && !isFloatingCashBlocked);
-
-  useEffect(() => {
-    if (availableOrder && !isFloatingCashBlocked) {
-      setPendingOrder(availableOrder);
-      setShowNewOrderAlert(true);
-    }
-  }, [availableOrder?.id, availableOrder?.orderId, isFloatingCashBlocked]);
-
   useEffect(() => {
     if (!isOnline || isFloatingCashBlocked) {
       setShowNewOrderAlert(false);
@@ -112,19 +102,28 @@ export const Dashboard: React.FC = () => {
     }
   }, [isOnline, isFloatingCashBlocked]);
 
-  // Connect to SSE stream for real-time dispatch events
+  // Connect to SSE stream for targeted real-time dispatch events (sequential ping loop)
   useEffect(() => {
     if (!isOnline) return;
 
+    const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('delivery_auth_token') : null;
+    const sseUrl = token 
+      ? `${BASE_URL}/delivery/stream?token=${encodeURIComponent(token)}` 
+      : `${BASE_URL}/delivery/stream`;
+
     const sseClient = createSSEClient({
-      url: `${BASE_URL}/delivery/stream`,
+      url: sseUrl,
       events: {
+        connected: (payload: any) => {
+          console.log('[SSE] Connected to dispatch stream for partner:', payload?.partnerId);
+        },
         floating_cash_update: (payload: any) => {
           if (payload && payload.floatingCash !== undefined) {
             setFloatingCash(Number(payload.floatingCash) || 0);
           }
         },
         dispatch: (payload: any) => {
+          console.log('[SSE] Received targeted DISPATCH_REQUEST:', payload);
           if (isFloatingCashBlocked) return;
           if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
             const formatted: Order = {
@@ -147,7 +146,6 @@ export const Dashboard: React.FC = () => {
             };
             setPendingOrder(formatted);
             setShowNewOrderAlert(true);
-            refreshAvailableOrders();
             refreshActiveOrders();
           }
         },
@@ -159,7 +157,7 @@ export const Dashboard: React.FC = () => {
     return () => {
       sseClient.close();
     };
-  }, [isOnline, isFloatingCashBlocked, refreshAvailableOrders, refreshActiveOrders, setFloatingCash]);
+  }, [isOnline, isFloatingCashBlocked]);
 
   return (
     <div className="flex-1 flex flex-col bg-slate-50 min-h-full pb-20 overflow-y-auto w-full relative">
@@ -270,7 +268,6 @@ export const Dashboard: React.FC = () => {
             });
             setPendingOrder(null);
             setShowNewOrderAlert(false);
-            refreshAvailableOrders?.();
             refreshActiveOrders?.();
             navigate(`/orders?orderId=${rawId}`);
           }}
@@ -285,7 +282,6 @@ export const Dashboard: React.FC = () => {
             }
             setPendingOrder(null);
             setShowNewOrderAlert(false);
-            refreshAvailableOrders?.();
           }}
           order={pendingOrder}
         />

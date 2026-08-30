@@ -10,9 +10,10 @@ interface UIState {
   contactNumber: string;
   isInitialLoading: boolean;
   isTabLoading: boolean;
-  permissionStep: any;
-  trackingDetails: any;
-  offersList: any[];
+  // SECURITY: Replace 'any' with proper types
+  permissionStep: string | null;
+  trackingDetails: Record<string, unknown> | null;
+  offersList: Array<Record<string, unknown>>;
   isSupport: boolean;
   setCurrentTab: (tab: Tab) => void;
   setShowSnackbar: (v: boolean) => void;
@@ -22,9 +23,9 @@ interface UIState {
   setContactNumber: (number: string) => void;
   setIsInitialLoading: (v: boolean) => void;
   setIsTabLoading: (v: boolean) => void;
-  setPermissionStep: (step: any) => void;
-  setTrackingDetails: (details: any) => void;
-  setOffersList: (offers: any[]) => void;
+  setPermissionStep: (step: string | null) => void;
+  setTrackingDetails: (details: Record<string, unknown> | null) => void;
+  setOffersList: (offers: Array<Record<string, unknown>>) => void;
   setIsSupport: (v: boolean) => void;
 }
 

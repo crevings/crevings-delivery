@@ -6,12 +6,13 @@ interface OrdersState {
   activeOrder: Order | null;
   selectedOrder: Order | null;
   editingOrder: Order | null;
-  quickOrderType: any;
+  // SECURITY: Replace 'any' with proper type
+  quickOrderType: string | null;
   setOrders: (orders: Order[]) => void;
   setActiveOrder: (order: Order | null) => void;
   setSelectedOrder: (order: Order | null) => void;
   setEditingOrder: (order: Order | null) => void;
-  setQuickOrderType: (type: any) => void;
+  setQuickOrderType: (type: string | null) => void;
   addOrder: (order: Order) => void;
   updateOrder: (orderId: string, updates: Partial<Order>) => void;
   removeOrder: (orderId: string) => void;
