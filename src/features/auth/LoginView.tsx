@@ -90,6 +90,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [isVerifying, setIsVerifying] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [isRequestingOtp, setIsRequestingOtp] = useState(false);
   const [authenticatedUser, setAuthenticatedUser] = useState<DeliveryAuthUser | null>(null);
   const [showRestoredModal, setShowRestoredModal] = useState(false);
   const [isNewUserLogin, setIsNewUserLogin] = useState(false);
@@ -254,15 +255,32 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   };
 
-  const triggerSendWhatsappOtp = async (targetPhone: string) => {
+  const triggerSendWhatsappOtp = async (targetPhone: string, navigateToOtp = true) => {
+    setIsRequestingOtp(true);
+    setApiError(null);
+    setOtpError(null);
     try {
-      const data = await post<unknown>("/delivery/auth/request-whatsapp-otp", {
-        phone: targetPhone,
+      const clean = targetPhone.replace(/\D/g, "").slice(-10);
+      if (clean.length !== 10) {
+        throw new Error("Please enter a valid 10-digit mobile number");
+      }
+      const data: any = await post("/delivery/auth/request-whatsapp-otp", {
+        phone: clean,
       });
-      // SECURITY: Do NOT log OTP response data in production
-      console.log("📱 WhatsApp OTP response: [REDACTED]");
-    } catch (err) {
-      console.error("Failed to trigger WhatsApp OTP:", err);
+      if (data && data.success === false) {
+        throw new Error(data.message || "Failed to send WhatsApp OTP");
+      }
+      if (navigateToOtp) {
+        setView("otp");
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || "Failed to send WhatsApp OTP. Please try again.";
+      setApiError(errMsg);
+      if (!navigateToOtp) {
+        setOtpError(errMsg);
+      }
+    } finally {
+      setIsRequestingOtp(false);
     }
   };
 
@@ -426,18 +444,17 @@ export const LoginView: React.FC<LoginViewProps> = ({
               type="button"
               onClick={() => {
                 if (phoneNumber.length === 10) {
-                  setView("otp");
-                  triggerSendWhatsappOtp(phoneNumber);
+                  triggerSendWhatsappOtp(phoneNumber, true);
                 }
               }}
-              disabled={phoneNumber.length < 10}
+              disabled={phoneNumber.length < 10 || isRequestingOtp}
               className={`w-full h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${
-                phoneNumber.length === 10
+                phoneNumber.length === 10 && !isRequestingOtp
                   ? "bg-[#00bd6f] text-white active:scale-[0.98] shadow-md shadow-emerald-500/20"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
-              Continue
+              {isRequestingOtp ? <Loader2 size={20} className="animate-spin text-white" /> : "Continue"}
             </button>
 
             <div className="relative flex py-0.5 items-center">
@@ -532,11 +549,13 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (phoneNumber) triggerSendWhatsappOtp(phoneNumber);
+                  if (phoneNumber) triggerSendWhatsappOtp(phoneNumber, false);
                 }}
-                className="w-full h-12 rounded-xl font-medium text-[13px] text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                disabled={isRequestingOtp}
+                className="w-full h-12 rounded-xl font-medium text-[13px] text-[#059669] bg-[#ECFDF5] border border-[#A7F3D0] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <MessageSquare size={16} /> Resend WhatsApp OTP
+                {isRequestingOtp ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />}
+                Resend WhatsApp OTP
               </button>
             </div>
           </div>

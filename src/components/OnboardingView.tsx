@@ -229,7 +229,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
 
   const handleSendPhoneOtp = async () => {
     const cleanPhone = personalDetails.phone.replace(/\D/g, "").slice(-10);
-    if (cleanPhone.length !== 10) return;
+    if (cleanPhone.length !== 10) {
+      setPhoneOtpError("Please enter a valid 10-digit mobile number");
+      return;
+    }
     setIsSendingPhoneOtp(true);
     setPhoneOtpError(null);
     try {
@@ -246,27 +249,21 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       const otpRes: any = await post("/delivery/auth/request-whatsapp-otp", {
         phone: cleanPhone,
       });
-      if (otpRes?.otp) {
-              // SECURITY: Do NOT log OTP values in production
-              console.log("🔥 [OTP Generated]: [REDACTED]");
-            }
+
+      if (otpRes && otpRes.success === false) {
+        throw new Error(otpRes.message || "Failed to send WhatsApp OTP");
+      }
+
       setShowOtpBox(true);
+      setPhoneOtp(["", "", "", "", "", ""]);
       setOtpCountdown(30);
       setTimeout(() => {
         otpInputs.current[0]?.focus();
       }, 100);
     } catch (err: any) {
-      console.warn("OTP request note:", err);
-      const errMsg = err?.message || "";
-      if (errMsg && (errMsg.includes("already registered") || errMsg.includes("already exists"))) {
-        setPhoneOtpError(errMsg);
-        return;
-      }
-      setShowOtpBox(true);
-      setOtpCountdown(30);
-      setTimeout(() => {
-        otpInputs.current[0]?.focus();
-      }, 100);
+      const errMsg = err?.message || "Failed to send WhatsApp OTP. Please try again.";
+      setPhoneOtpError(errMsg);
+      setShowOtpBox(false);
     } finally {
       setIsSendingPhoneOtp(false);
     }
@@ -821,6 +818,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                         setPersonalDetails({ ...personalDetails, phone: e.target.value.replace(/\D/g, "") });
                         setIsPhoneVerified(false);
                         setShowOtpBox(false);
+                        setPhoneOtpError(null);
                       }}
                       className="flex-1 h-13 px-4 bg-white border border-slate-200 rounded-xl text-[15px] font-medium text-slate-900 focus:outline-none focus:border-[#00bd6f] focus:ring-1 focus:ring-[#00bd6f] shadow-xs disabled:bg-slate-50 disabled:text-slate-500"
                     />
@@ -836,6 +834,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                     )}
                   </div>
 
+                  {!showOtpBox && !isPhoneVerified && phoneOtpError && (
+                    <p className="text-rose-500 text-xs font-semibold mt-1.5 flex items-center gap-1">
+                      <AlertCircle size={13} className="shrink-0" /> {phoneOtpError}
+                    </p>
+                  )}
+
                   {/* Inline OTP Input Box */}
                   {showOtpBox && !isPhoneVerified && (
                     <motion.div
@@ -844,7 +848,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                       className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-3 mt-2"
                     >
                       <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-emerald-900">Enter OTP sent to phone:</span>
+                        <span className="text-xs font-bold text-emerald-900">Enter OTP sent to your WhatsApp:</span>
                         {otpCountdown > 0 && <span className="text-[11px] font-semibold text-emerald-700">{otpCountdown}s</span>}
                       </div>
 
