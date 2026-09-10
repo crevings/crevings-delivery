@@ -75,11 +75,6 @@ export const Header: React.FC<HeaderProps> = ({ title }) => {
     try {
       await toggleOnline(next);
       setIsOnline(next);
-      try {
-        localStorage.setItem('delivery_is_online', next ? '1' : '0');
-      } catch {
-        // non-fatal
-      }
     } catch (err: any) {
       setHeaderError(err.message || 'Failed to update availability status');
       setTimeout(() => setHeaderError(null), 5000);

@@ -21,6 +21,7 @@ import { motion } from "motion/react";
 import { post, ResponseError } from "@/api/fetcher";
 import { useAuth } from "@/app/providers";
 import { useAuthStore } from "@/app/store";
+import { clearSecureStorage } from "@/utils/security/secureStorage";
 import { LoadingSpinner } from "@/shared/components/layout";
 
 export interface DeliveryAuthUser {
@@ -187,7 +188,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
         success: boolean;
         message?: string;
         error?: string;
-        token?: string;
         user?: DeliveryAuthUser;
         isNewUser?: boolean;
         deletionCancelled?: boolean;
@@ -201,8 +201,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
       }
 
       if (data.user) {
+        clearSecureStorage();
         setAuthenticatedUser(data.user);
-        authLogin(data.token, data.user);
+        // The backend sets the session via HttpOnly cookie; nothing to pass along.
+        authLogin(data.user);
         if (onLoginSuccess) {
           onLoginSuccess(data.user);
         }
@@ -243,7 +245,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         role: "DELIVERY_PARTNER",
       };
       const updatedUser = { ...baseUser, name: nameInput.trim() };
-      authLogin(undefined, updatedUser);
+      authLogin(updatedUser);
       if (onLoginSuccess) {
         onLoginSuccess(updatedUser);
       }

@@ -51,11 +51,9 @@ export async function initPushNotifications(): Promise<void> {
     await PushNotifications.addListener("registration", (token: Token) => {
       // SECURITY: Do NOT log FCM token values in production
       console.log("🔥 [FCM] Delivery Token received: [REDACTED]");
+      // Kept in memory only — the backend re-syncs it on every login, so no
+      // client-side persistence is needed.
       registeredToken = token.value;
-      try {
-        // SECURITY: Use sessionStorage instead of localStorage for sensitive tokens
-        sessionStorage.setItem("delivery_fcm_token", token.value);
-      } catch {}
       void persistToken(token.value);
     });
 
@@ -74,11 +72,6 @@ export async function initPushNotifications(): Promise<void> {
       console.log("[Push] Notification tapped:", action);
     });
 
-    // If we already have a saved token from previous session, sync it to backend
-    const savedToken = getSavedFcmToken();
-    if (savedToken) {
-      void persistToken(savedToken);
-    }
   } catch (err: any) {
     console.error("[Push] Failed to initialize push notifications:", err?.message || err);
   }
@@ -88,9 +81,8 @@ export async function initPushNotifications(): Promise<void> {
  * Resync FCM token to backend (call after login/token refresh)
  */
 export async function syncDeviceToken(): Promise<void> {
-  const token = registeredToken || getSavedFcmToken();
-  if (token) {
-    await persistToken(token);
+  if (registeredToken) {
+    await persistToken(registeredToken);
   }
 }
 
@@ -109,7 +101,7 @@ async function persistToken(token: string): Promise<void> {
  */
 export async function unregisterPushNotifications(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
-  const token = registeredToken || getSavedFcmToken();
+  const token = registeredToken;
   registeredToken = null;
   if (!token) return;
 
@@ -121,12 +113,5 @@ export async function unregisterPushNotifications(): Promise<void> {
   }
 }
 
-export function getSavedFcmToken(): string | null {
-  try {
-    // SECURITY: Use sessionStorage instead of localStorage for sensitive tokens
-    return sessionStorage.getItem("delivery_fcm_token");
-  } catch {
-    return null;
-  }
-}
+
 

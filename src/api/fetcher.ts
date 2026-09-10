@@ -2,8 +2,9 @@
  * Typed API client — the single request layer for the entire app
  * (mirrors crevings-consumer's src/api/fetcher.ts).
  *
- * - Cookie-based auth (`credentials: "include"`) AND the session Bearer token
- *   when present (delivery auth supports both; keeps existing behavior).
+ * - Cookie-based auth ONLY (`credentials: "include"`). The backend issues
+ *   tokens exclusively as HttpOnly cookies (never in the response body), so
+ *   nothing auth-related is kept in localStorage/sessionStorage.
  * - Automatic request timeout via AbortController (no hung requests).
  * - Optional external `signal` for effect cleanup (race-safe requests).
  * - Typed helpers: get / post / patch / del.
@@ -41,17 +42,6 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
-/** Session Bearer token for the delivery API (kept in sessionStorage by AuthProvider). */
-const getSessionToken = (): string | null => {
-  try {
-    return typeof sessionStorage !== "undefined"
-      ? sessionStorage.getItem("delivery_auth_token")
-      : null;
-  } catch {
-    return null;
-  }
-};
-
 /**
  * Fired once when any authenticated request comes back 401, so the app can
  * drop the session and redirect to /login (AuthProvider listens for it).
@@ -80,17 +70,8 @@ async function refreshAccessToken(): Promise<boolean> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    if (res.ok) {
-      // Persist new token if backend returns one in response body
-      try {
-        const data = await res.json();
-        if (data.token) {
-          sessionStorage.setItem("delivery_auth_token", data.token);
-        }
-      } catch {}
-      return true;
-    }
-    return false;
+    // Backend rotates tokens via HttpOnly cookies only — nothing to persist.
+    return true;
   } catch {
     return false;
   }
@@ -111,8 +92,6 @@ export async function request<T = unknown>(
     ? AbortSignal.any([timeoutController.signal, signal])
     : timeoutController.signal;
 
-  const token = getSessionToken();
-
   const doFetch = async (resignal?: AbortSignal) => {
     return fetch(isRelative ? `${BASE_URL}${path}` : path, {
       ...rest,
@@ -121,7 +100,6 @@ export async function request<T = unknown>(
       headers: isRelative
         ? {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
             ...(headers || {}),
           }
         : (headers || {}),
@@ -145,7 +123,7 @@ export async function request<T = unknown>(
         const retryRes = await doFetch();
         if (!retryRes.ok) {
           // Refresh succeeded but retry still failed — session is truly dead
-          if (retryRes.status === 401 && getSessionToken() !== null) {
+          if (retryRes.status === 401) {
             notifyUnauthorized();
           }
           let info: unknown = null;
@@ -159,14 +137,12 @@ export async function request<T = unknown>(
         return (retryText ? JSON.parse(retryText) : undefined) as T;
       }
 
-      // Refresh failed — notify and throw
-      if (getSessionToken() !== null) {
-        notifyUnauthorized();
-      }
+      // Refresh failed — session is dead, notify and throw
+      notifyUnauthorized();
     }
 
     if (!res.ok) {
-      if (res.status === 401 && isRelative && getSessionToken() !== null) {
+      if (res.status === 401 && isRelative) {
         notifyUnauthorized();
       }
       let info: unknown = null;

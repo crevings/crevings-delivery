@@ -27,6 +27,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { get, post, BASE_URL } from "@/api/fetcher";
 import { analyzePhotoQuality, PhotoQualityResult } from "@/shared/utils/photoIntelligence";
+import { invalidateOnboardingCache } from "@/app/routes/ProtectedRoute";
 
 interface OnboardingViewProps {
   onComplete?: () => void;
@@ -82,51 +83,6 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   const navigate = useNavigate();
   const partnerId = useAuthStore(s => s.partnerId);
 
-  // ── sessionStorage persistence key (encrypted, non-persistent) ──────
-    const STORAGE_KEY = partnerId ? `onboarding_draft_${partnerId}` : null;
-
-    // Lightweight XOR obfuscation — prevents casual inspection of PII in sessionStorage.
-    // Key is derived from partnerId so each partner's draft is independently scrambled.
-    const _obfuscate = (plaintext: string, key: string): string => {
-      let out = "";
-      for (let i = 0; i < plaintext.length; i++) {
-        out += String.fromCharCode(plaintext.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-      }
-      // btoa handles the (possibly non-ASCII) result safely for storage
-      try { return btoa(out); } catch { return out; }
-    };
-    const _deobfuscate = (encoded: string, key: string): string => {
-      let decoded: string;
-      try { decoded = atob(encoded); } catch { return encoded; }
-      let out = "";
-      for (let i = 0; i < decoded.length; i++) {
-        out += String.fromCharCode(decoded.charCodeAt(i) ^ key.charCodeAt(i % key.length));
-      }
-      return out;
-    };
-
-    const saveDraft = (data: Record<string, any>) => {
-      if (!STORAGE_KEY) return;
-      try {
-        const json = JSON.stringify(data);
-        const encrypted = _obfuscate(json, STORAGE_KEY);
-        sessionStorage.setItem(STORAGE_KEY, encrypted);
-      } catch {}
-    };
-    const loadDraft = (): Record<string, any> | null => {
-      if (!STORAGE_KEY) return null;
-      try {
-        const encrypted = sessionStorage.getItem(STORAGE_KEY);
-        if (!encrypted) return null;
-        const json = _deobfuscate(encrypted, STORAGE_KEY);
-        return JSON.parse(json);
-      } catch { return null; }
-    };
-    const clearDraft = () => {
-      if (!STORAGE_KEY) return;
-      try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
-    };
-
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1); // 4 = Success
   const [isRestoringStep, setIsRestoringStep] = useState(true);
   const [isSavingBasic, setIsSavingBasic] = useState(false);
@@ -145,68 +101,59 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     emergencyRelationship: "Parent",
   });
 
-  // ── Restore onboarding progress from sessionStorage + backend on mount ──
+  // ── Restore onboarding progress from the backend on mount (API-only) ──
     useEffect(() => {
       if (!partnerId) { setIsRestoringStep(false); return; }
       (async () => {
-        // Priority 1: restore from sessionStorage encrypted draft (survives refresh, NOT cross-session)
-        const draft = loadDraft();
-      if (draft) {
-        if (draft.personalDetails) setPersonalDetails(draft.personalDetails);
-        if (draft.selfieUrl) setSelfieUrl(draft.selfieUrl);
-        if (draft.aadhaarNumber) setAadhaarNumber(draft.aadhaarNumber);
-        if (draft.aadhaarFrontPhoto) setAadhaarFrontPhoto(draft.aadhaarFrontPhoto);
-        if (draft.aadhaarBackPhoto) setAadhaarBackPhoto(draft.aadhaarBackPhoto);
-        if (draft.isAadhaarVerified) setIsAadhaarVerified(true);
-        if (draft.panNumber) setPanNumber(draft.panNumber);
-        if (draft.panCardPhoto) setPanCardPhoto(draft.panCardPhoto);
-        if (draft.isPanVerified) setIsPanVerified(true);
-        if (draft.termsAgreed) setTermsAgreed(true);
-        if (draft.isPhoneVerified) setIsPhoneVerified(true);
-        if (draft.currentStep && draft.currentStep >= 1 && draft.currentStep <= 3) {
-          setCurrentStep(draft.currentStep);
+        try {
+          const data = await get<Record<string, any>>("/delivery/onboarding");
+          const completed =
+            data?.onboardingStatus === "KYC_VERIFIED" ||
+            data?.onboardingStatus === "COMPLETE" ||
+            (data?.aadhaar?.verified && data?.pan?.verified);
+          if (completed) {
+            // All done — redirect back to the login / home screen.
+            navigate("/", { replace: true });
+            return;
+          }
+
+          if (data?.phone) {
+            setIsPhoneVerified(true);
+          }
+
+          if (data?.name || data?.phone || data?.email) {
+            setPersonalDetails({
+              name: data.name || "",
+              phone: (data.phone || "").replace(/\D/g, "").slice(-10),
+              email: data.email || "",
+              emergencyName: data.emergencyContact?.name || "",
+              emergencyPhone: (data.emergencyContact?.phone || "").replace(/\D/g, "").slice(-10),
+              emergencyRelationship: data.emergencyContact?.relationship || "Parent",
+            });
+          }
+
+          // Step 2 check: Selfie already persisted → land directly on Step 3.
+          const selfieDoc = data.documents?.find((d: any) => d.type === "SELFIE");
+          const savedSelfieUrl = data.selfieUrl || selfieDoc?.url;
+          if (savedSelfieUrl && typeof savedSelfieUrl === "string" && savedSelfieUrl.startsWith("http")) {
+            setSelfieUrl(savedSelfieUrl);
+            setCurrentStep(3);
+          } else if (data?.onboardingStatus === "PROFILE" || data?.name) {
+            setCurrentStep(2);
+          }
+
+          // Restore KYC data from backend
+          if (data.aadhaar?.verified) setIsAadhaarVerified(true);
+          if (data.pan?.verified) setIsPanVerified(true);
+          if (data.onboardingStatus === "KYC_PENDING" || data.aadhaar?.verified || data.pan?.verified) {
+            setCurrentStep(3);
+          }
+        } catch {
+          // No saved progress -- start fresh at step 1
+        } finally {
+          setIsRestoringStep(false);
         }
-        setIsRestoringStep(false);
-        return;
-      }
-      // Priority 2: fallback to backend status
-      try {
-        const data = await get<Record<string, any>>("/delivery/onboarding");
-        if (data?.onboardingStatus === "PROFILE" || data?.onboardingStatus === "KYC_PENDING") {
-          setCurrentStep(2);
-          setPersonalDetails({
-            name: data.name || "",
-            phone: data.phone || "",
-            email: data.email || "",
-            emergencyName: data.emergencyContact?.name || "",
-            emergencyPhone: data.emergencyContact?.phone || "",
-            emergencyRelationship: data.emergencyContact?.relationship || "Parent",
-          });
-        }
-        const selfieDoc = data.documents?.find((d: any) => d.type === "SELFIE");
-        const savedSelfieUrl = data.selfieUrl || selfieDoc?.url;
-        if (savedSelfieUrl && savedSelfieUrl.startsWith("http")) {
-          setSelfieUrl(savedSelfieUrl);
-          setCurrentStep(2);
-        }
-        // Restore KYC data from backend
-        const aadhaarFrontDoc = data.documents?.find((d: any) => d.type === "AADHAAR_FRONT");
-        const aadhaarBackDoc = data.documents?.find((d: any) => d.type === "AADHAAR_BACK");
-        const panDoc = data.documents?.find((d: any) => d.type === "PAN_CARD");
-        if (data.aadhaar?.verified) setIsAadhaarVerified(true);
-        if (data.pan?.verified) setIsPanVerified(true);
-        if (data.onboardingStatus === "KYC_PENDING" || data.aadhaar?.verified || data.pan?.verified) {
-          setCurrentStep(3);
-          if (aadhaarFrontDoc?.url) setAadhaarFrontPhoto(aadhaarFrontDoc.url);
-          if (aadhaarBackDoc?.url) setAadhaarBackPhoto(aadhaarBackDoc.url);
-          if (panDoc?.url) setPanCardPhoto(panDoc.url);
-        }
-      } catch {
-        // No saved progress -- start fresh at step 1
-      } finally {
-        setIsRestoringStep(false);
-      }
-    })();
+      })();
   }, [partnerId]);
 
   // Mobile OTP state
@@ -329,10 +276,27 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   // ─────────────────────────────────────────────────────────────
   const [selfieUrl, setSelfieUrl] = useState<string | null>(null);
   const previousSelfieUrlRef = useRef<string | null>(null);
+  // Selfie captured locally but NOT uploaded yet — the single Cloudflare
+  // upload happens when the driver proceeds to Step 3, so retakes never
+  // burn uploads.
+  const [pendingSelfie, setPendingSelfie] = useState<{ blob: Blob; previewUrl: string } | null>(null);
   const [isUploadingSelfie, setIsUploadingSelfie] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false);
   const [photoAnalysis, setPhotoAnalysis] = useState<PhotoQualityResult | null>(null);
+
+  const clearPendingSelfie = useCallback(() => {
+    setPendingSelfie((prev) => {
+      if (prev) {
+        try {
+          URL.revokeObjectURL(prev.previewUrl);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    });
+  }, []);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -349,8 +313,9 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   useEffect(() => {
     return () => {
       stopCamera();
+      clearPendingSelfie();
     };
-  }, [stopCamera]);
+  }, [stopCamera, clearPendingSelfie]);
 
   const triggerNativeCamera = () => {
     if (selfieInputRef.current) {
@@ -390,13 +355,12 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     if (!file) return;
     try {
       stopCamera();
-      setIsUploadingSelfie(true);
       setGlobalError(null);
 
       // Analyze photo quality locally
       setIsAnalyzingPhoto(true);
-      const img = new Image();
       const localPreview = URL.createObjectURL(file);
+      const img = new Image();
       img.onload = async () => {
         const canvas = document.createElement("canvas");
         canvas.width = img.naturalWidth || 480;
@@ -412,27 +376,17 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
           }
         }
         setIsAnalyzingPhoto(false);
-        URL.revokeObjectURL(localPreview);
       };
       img.src = localPreview;
 
-      // Strict Cloudflare upload
-      // Delete old Cloudflare image if retaking
-      const oldUrl = selfieUrl;
-      const uploadedUrl = await uploadFileToCloudflare(file, "selfie.jpg");
-      setSelfieUrl(uploadedUrl);
-      previousSelfieUrlRef.current = uploadedUrl;
-      if (oldUrl && oldUrl !== uploadedUrl) {
-        deleteImageFromCloudflare(oldUrl).catch(() => {});
-      }
-      // Persist selfie to backend so it survives sessionStorage clear
-      post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl }).catch(() => {});
+      // Keep the frame locally (preview only). No Cloudflare upload here —
+      // the single upload happens on "Proceed to Aadhaar & PAN", so a retake
+      // loop never burns uploads.
+      clearPendingSelfie();
+      setPendingSelfie({ blob: file, previewUrl: localPreview });
     } catch (err: any) {
-      console.error("Selfie upload error:", err);
-      setGlobalError(err.message || "Failed to upload selfie to Cloudflare. Please try again.");
-      setSelfieUrl(null);
-    } finally {
-      setIsUploadingSelfie(false);
+      console.error("Selfie processing error:", err);
+      setGlobalError(err.message || "Failed to process selfie. Please try again.");
     }
   };
 
@@ -461,37 +415,52 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       setIsAnalyzingPhoto(false);
     }
 
-    // Direct Cloudflare upload
-    setIsUploadingSelfie(true);
-    setGlobalError(null);
-    canvas.toBlob(async (blob) => {
+    // Keep the frame locally (preview only). No Cloudflare upload here —
+    // the single upload happens on "Proceed to Aadhaar & PAN".
+    canvas.toBlob((blob) => {
       if (blob) {
-        try {
-          // Delete old Cloudflare image if retaking
-          const oldUrl = selfieUrl;
-          const uploadedUrl = await uploadFileToCloudflare(blob, "selfie.jpg");
-          setSelfieUrl(uploadedUrl);
-          previousSelfieUrlRef.current = uploadedUrl;
-          if (oldUrl && oldUrl !== uploadedUrl) {
-            deleteImageFromCloudflare(oldUrl).catch(() => {});
-          }
-          // Persist selfie to backend so it survives sessionStorage clear
-          post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl }).catch(() => {});
-        } catch (err: any) {
-          console.error("Selfie upload error:", err);
-          setGlobalError(err.message || "Failed to upload selfie to Cloudflare. Please try again.");
-          setSelfieUrl(null);
-        } finally {
-          setIsUploadingSelfie(false);
-        }
+        clearPendingSelfie();
+        const previewUrl = URL.createObjectURL(blob);
+        setPendingSelfie({ blob, previewUrl });
       }
     }, "image/jpeg", 0.92);
+  };
+
+  // Upload the accepted selfie to Cloudflare EXACTLY ONCE — when the driver
+  // proceeds to Step 3 — then persist it and advance. Every retake before
+  // this point was purely local (zero uploads).
+  const handleProceedToStep3 = async () => {
+    if (isUploadingSelfie) return;
+    if (pendingSelfie) {
+      setIsUploadingSelfie(true);
+      setGlobalError(null);
+      try {
+        const uploadedUrl = await uploadFileToCloudflare(pendingSelfie.blob, "selfie.jpg");
+        const oldUrl = selfieUrl;
+        setSelfieUrl(uploadedUrl);
+        previousSelfieUrlRef.current = uploadedUrl;
+        clearPendingSelfie();
+        // Delete the previously persisted Cloudflare image, if any.
+        if (oldUrl && oldUrl !== uploadedUrl) {
+          deleteImageFromCloudflare(oldUrl).catch(() => {});
+        }
+        // Persist selfie to backend so it survives a refresh
+        await post("/delivery/onboarding/selfie", { selfieUrl: uploadedUrl });
+      } catch (err: any) {
+        console.error("Selfie upload error:", err);
+        setGlobalError(err.message || "Failed to upload photo. Please try again.");
+        setIsUploadingSelfie(false);
+        return; // stay on step 2; the driver can tap Proceed to retry
+      }
+      setIsUploadingSelfie(false);
+    }
+    stopCamera();
+    setCurrentStep(3);
   };
 
   // ─────────────────────────────────────────────────────────────
   // PAGE 3: Aadhaar & PAN Verification
   // ─────────────────────────────────────────────────────────────
-  const [aadhaarMode, setAadhaarMode] = useState<"DIGILOCKER" | "MANUAL">("DIGILOCKER");
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [aadhaarOtp, setAadhaarOtp] = useState(["", "", "", "", "", ""]);
   const [aadhaarRefId, setAadhaarRefId] = useState<string | null>(null);
@@ -501,40 +470,13 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
   const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
   const [aadhaarError, setAadhaarError] = useState<string | null>(null);
 
-  // Manual Aadhaar Photos
-  const [aadhaarFrontPhoto, setAadhaarFrontPhoto] = useState<string | null>(null);
-  const [aadhaarBackPhoto, setAadhaarBackPhoto] = useState<string | null>(null);
-  const [isUploadingFront, setIsUploadingFront] = useState(false);
-  const [isUploadingBack, setIsUploadingBack] = useState(false);
-
   // PAN details
   const [panNumber, setPanNumber] = useState("");
-  const [panCardPhoto, setPanCardPhoto] = useState<string | null>(null);
   const [isVerifyingPan, setIsVerifyingPan] = useState(false);
   const [isPanVerified, setIsPanVerified] = useState(false);
   const [panError, setPanError] = useState<string | null>(null);
-  const [isUploadingPan, setIsUploadingPan] = useState(false);
 
   const [termsAgreed, setTermsAgreed] = useState(false);
-
-  // ── Auto-save onboarding draft to encrypted sessionStorage on every change ────
-  useEffect(() => {
-    if (isRestoringStep) return; // Don't save while still loading
-    saveDraft({
-      currentStep,
-      personalDetails,
-      isPhoneVerified,
-      selfieUrl,
-      aadhaarNumber,
-      aadhaarFrontPhoto,
-      aadhaarBackPhoto,
-      isAadhaarVerified,
-      panNumber,
-      panCardPhoto,
-      isPanVerified,
-      termsAgreed,
-    });
-  }, [currentStep, personalDetails, isPhoneVerified, selfieUrl, aadhaarNumber, aadhaarFrontPhoto, aadhaarBackPhoto, isAadhaarVerified, panNumber, panCardPhoto, isPanVerified, termsAgreed, isRestoringStep]);
 
   const handleSendAadhaarOtp = async () => {
     const clean = aadhaarNumber.replace(/\D/g, "");
@@ -556,8 +498,8 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       }
     } catch (err: any) {
       const msg = err.message?.includes("aborted")
-        ? "Verification request timed out. Please try again or use manual upload."
-        : err.message || "Failed to trigger Aadhaar OTP. Please try manual upload.";
+        ? "Verification request timed out. Please try again."
+        : err.message || "Failed to trigger Aadhaar OTP. Please try again.";
       setAadhaarError(msg);
     } finally {
       setIsSendingAadhaarOtp(false);
@@ -579,12 +521,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       });
       if (res?.success || res?.verified) {
         setIsAadhaarVerified(true);
-        // Persist Aadhaar to backend so it survives sessionStorage clear
+        // Persist Aadhaar to backend so it survives a refresh
         post("/delivery/onboarding/kyc-draft", {
           aadhaarNumber: aadhaarNumber.trim(),
           aadhaarVerified: true,
-          aadhaarFrontUrl: aadhaarFrontPhoto || "",
-          aadhaarBackUrl: aadhaarBackPhoto || "",
         }).catch(() => {});
       } else {
         setAadhaarError(res?.message || "Invalid Aadhaar OTP");
@@ -615,11 +555,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
       });
       if (res?.success || res?.verified) {
         setIsPanVerified(true);
-        // Persist PAN to backend so it survives sessionStorage clear
+        // Persist PAN to backend so it survives a refresh
         post("/delivery/onboarding/kyc-draft", {
           panNumber: panNumber.trim().toUpperCase(),
           panVerified: true,
-          panCardUrl: panCardPhoto || "",
         }).catch(() => {});
       } else {
         setPanError(res?.message || "PAN verification failed");
@@ -655,28 +594,19 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
         aadhaar: {
           number: aadhaarNumber,
           verified: isAadhaarVerified,
-          frontUrl: aadhaarFrontPhoto || "",
-          backUrl: aadhaarBackPhoto || "",
-          method: aadhaarMode === "DIGILOCKER" ? (isAadhaarVerified ? "OTP" : "DIGILOCKER") : "MANUAL_UPLOAD",
+          method: "OTP",
         },
         pan: {
           number: panNumber.toUpperCase(),
           verified: isPanVerified,
-          cardUrl: panCardPhoto || "",
-          method: isPanVerified ? "API_VERIFIED" : "MANUAL_UPLOAD",
+          method: "API_VERIFIED",
         },
       };
 
       await post("/delivery/onboarding/submit", payload);
-      // Clear onboarding draft from sessionStorage (no longer needed)
-      clearDraft();
-      // Persist onboarding-complete flag so ProtectedRoute allows app access
-      // on next login / app restart.
-      if (partnerId) {
-        try {
-          localStorage.setItem(`onboarding_complete_${partnerId}`, 'true');
-        } catch { /* non-fatal */ }
-      }
+      // Drop any stale in-memory onboarding flag so ProtectedRoute re-checks
+      // the backend on the next navigation.
+      invalidateOnboardingCache(partnerId);
       setCurrentStep(4); // Show success screen
     } catch (err: any) {
       setGlobalError(err.message || "Failed to submit application. Please check all details.");
@@ -699,12 +629,15 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     personalDetails.emergencyPhone.length === 10 &&
     !isSamePhone;
 
-  const isStep2Valid = !!selfieUrl && !isUploadingSelfie && typeof selfieUrl === "string" && selfieUrl.startsWith("http") && (!photoAnalysis || photoAnalysis.passed);
+  const hasSelfieReady =
+    !!pendingSelfie ||
+    (typeof selfieUrl === "string" && selfieUrl.startsWith("http"));
+  const isStep2Valid =
+    !isUploadingSelfie &&
+    hasSelfieReady &&
+    (!photoAnalysis || photoAnalysis.passed);
 
-  const isStep3Valid =
-    (isAadhaarVerified || (aadhaarFrontPhoto && aadhaarBackPhoto)) &&
-    (isPanVerified || (panNumber.length === 10 && panCardPhoto)) &&
-    termsAgreed;
+  const isStep3Valid = isAadhaarVerified && isPanVerified && termsAgreed;
 
   return (
     <div className="fixed inset-0 z-[550] bg-slate-50 flex flex-col font-sans overflow-y-auto app-container shadow-2xl">
@@ -975,18 +908,24 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                   onClick={async () => {
                     if (!isStep1Valid) return;
                     setIsSavingBasic(true);
+                    setGlobalError(null);
                     try {
                       await post("/delivery/onboarding/basic", {
                         name: personalDetails.name.trim(),
                         phone: personalDetails.phone,
                         email: personalDetails.email.trim().toLowerCase(),
                         vehicleType: "Bike",
+                        emergencyContact: {
+                          name: personalDetails.emergencyName.trim(),
+                          phone: personalDetails.emergencyPhone.trim(),
+                          relationship: personalDetails.emergencyRelationship || "Parent",
+                        },
                       });
-                    } catch {
-                      // Non-fatal: step 1 data will be included in final submission
+                      setCurrentStep(2);
+                    } catch (err: any) {
+                      setGlobalError(err?.message || "Failed to save profile. Please try again.");
                     } finally {
                       setIsSavingBasic(false);
-                      setCurrentStep(2);
                     }
                   }}
                   disabled={!isStep1Valid || isSavingBasic}
@@ -1080,16 +1019,20 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                   ) : isUploadingSelfie ? (
                     <div className="flex flex-col items-center justify-center p-6 text-center text-white space-y-3">
                       <Loader2 size={36} className="animate-spin text-[#00bd6f]" />
-                      <p className="text-sm font-bold text-white">Uploading to Cloudflare CDN...</p>
-                      <p className="text-xs text-slate-400">Please wait a moment while your photo is verified</p>
+                      <p className="text-sm font-bold text-white">Uploading your photo...</p>
+                      <p className="text-xs text-slate-400">Please wait a moment</p>
                     </div>
-                  ) : selfieUrl ? (
+                  ) : pendingSelfie || selfieUrl ? (
                     <div className="relative w-full h-full">
-                      <img src={selfieUrl} alt="Selfie" className="w-full h-full object-cover" />
+                      <img
+                        src={pendingSelfie?.previewUrl || selfieUrl || ""}
+                        alt="Selfie"
+                        className="w-full h-full object-cover"
+                      />
                       <button
                         type="button"
                         onClick={() => {
-                          setSelfieUrl(null);
+                          clearPendingSelfie();
                           setPhotoAnalysis(null);
                           if (streamRef.current) stopCamera();
                         }}
@@ -1197,7 +1140,7 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                       <button
                         type="button"
                         onClick={() => {
-                          setSelfieUrl(null);
+                          clearPendingSelfie();
                           setPhotoAnalysis(null);
                           startCamera();
                         }}
@@ -1227,18 +1170,21 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    stopCamera();
-                    setCurrentStep(3);
-                  }}
-                  disabled={!isStep2Valid}
+                  onClick={handleProceedToStep3}
+                  disabled={!isStep2Valid || isUploadingSelfie}
                   className={`flex-1 h-14 rounded-2xl font-bold text-[16px] flex items-center justify-center transition-all ${
-                    isStep2Valid
+                    isStep2Valid && !isUploadingSelfie
                       ? "bg-[#00bd6f] text-white active:scale-98 shadow-md shadow-emerald-500/20"
                       : "bg-slate-200 text-slate-400 cursor-not-allowed"
                   }`}
                 >
-                  Proceed to Aadhaar & PAN
+                  {isUploadingSelfie ? (
+                    <>
+                      <Loader2 size={18} className="animate-spin" /> Uploading...
+                    </>
+                  ) : (
+                    "Proceed to Aadhaar & PAN"
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -1280,32 +1226,8 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                     )}
                   </div>
 
-                  {/* Mode Selector Toggle */}
-                  {!isAadhaarVerified && (
-                    <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl">
-                      <button
-                        type="button"
-                        onClick={() => setAadhaarMode("DIGILOCKER")}
-                        className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                          aadhaarMode === "DIGILOCKER" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500"
-                        }`}
-                      >
-                        ⚡ DigiLocker / OTP
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAadhaarMode("MANUAL")}
-                        className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                          aadhaarMode === "MANUAL" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500"
-                        }`}
-                      >
-                        📷 Upload Photos
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Mode A: DigiLocker / Aadhaar OTP */}
-                  {aadhaarMode === "DIGILOCKER" && !isAadhaarVerified && (
+                  {/* Aadhaar Input & OTP Flow */}
+                  {!isAadhaarVerified ? (
                     <div className="space-y-3">
                       <div>
                         <label className="text-xs font-semibold text-slate-600 mb-1 block">Aadhaar Number (12 digits)</label>
@@ -1365,88 +1287,10 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
 
                       {aadhaarError && <p className="text-rose-500 text-xs font-semibold">{aadhaarError}</p>}
                     </div>
-                  )}
-
-                  {/* Mode B: Manual Aadhaar Photos Upload */}
-                  {aadhaarMode === "MANUAL" && (
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Front Photo */}
-                      <div
-                        onClick={() => {
-                          const input = document.createElement("input");
-                          input.type = "file";
-                          input.accept = "image/*";
-                          input.onchange = async (e: any) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setIsUploadingFront(true);
-                              setAadhaarError(null);
-                              try {
-                                const url = await uploadFileToCloudflare(file, "aadhaar_front.jpg");
-                                setAadhaarFrontPhoto(url);
-                              } catch (err: any) {
-                                console.error("Aadhaar front upload error:", err);
-                                setAadhaarError(err.message || "Failed to upload Aadhaar front image");
-                              } finally {
-                                setIsUploadingFront(false);
-                              }
-                            }
-                          };
-                          input.click();
-                        }}
-                        className="p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-100 transition-colors h-28 overflow-hidden relative"
-                      >
-                        {isUploadingFront ? (
-                          <Loader2 size={20} className="animate-spin text-[#00bd6f]" />
-                        ) : aadhaarFrontPhoto ? (
-                          <img src={aadhaarFrontPhoto} alt="Front" className="w-full h-full object-cover rounded-xl" />
-                        ) : (
-                          <>
-                            <Upload size={18} className="text-[#00bd6f] mb-1" />
-                            <span className="text-[11px] font-bold text-slate-700">Aadhaar Front</span>
-                            <span className="text-[9px] text-slate-400">Click to upload</span>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Back Photo */}
-                      <div
-                        onClick={() => {
-                          const input = document.createElement("input");
-                          input.type = "file";
-                          input.accept = "image/*";
-                          input.onchange = async (e: any) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setIsUploadingBack(true);
-                              setAadhaarError(null);
-                              try {
-                                const url = await uploadFileToCloudflare(file, "aadhaar_back.jpg");
-                                setAadhaarBackPhoto(url);
-                              } catch (err: any) {
-                                console.error("Aadhaar back upload error:", err);
-                                setAadhaarError(err.message || "Failed to upload Aadhaar back image");
-                              } finally {
-                                setIsUploadingBack(false);
-                              }
-                            }
-                          };
-                          input.click();
-                        }}
-                        className="p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-100 transition-colors h-28 overflow-hidden relative"
-                      >
-                        {isUploadingBack ? (
-                          <Loader2 size={20} className="animate-spin text-[#00bd6f]" />
-                        ) : aadhaarBackPhoto ? (
-                          <img src={aadhaarBackPhoto} alt="Back" className="w-full h-full object-cover rounded-xl" />
-                        ) : (
-                          <>
-                            <Upload size={18} className="text-[#00bd6f] mb-1" />
-                            <span className="text-[11px] font-bold text-slate-700">Aadhaar Back</span>
-                            <span className="text-[9px] text-slate-400">Click to upload</span>
-                          </>
-                        )}
-                      </div>
+                  ) : (
+                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-900 font-medium">
+                      <span>Aadhaar number verified successfully via OTP</span>
+                      <CheckCircle2 size={16} className="text-[#00bd6f]" />
                     </div>
                   )}
                 </div>
@@ -1470,15 +1314,16 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
 
                   <div className="space-y-3">
                     <div>
-                      <label className="text-xs font-semibold text-slate-600 mb-1 block">PAN Number</label>
+                      <label className="text-xs font-semibold text-slate-600 mb-1 block">PAN Number (10 characters)</label>
                       <div className="flex gap-2">
                         <input
                           type="text"
                           placeholder="e.g. ABCDE1234F"
                           maxLength={10}
                           value={panNumber}
+                          disabled={isPanVerified}
                           onChange={(e) => setPanNumber(e.target.value.toUpperCase())}
-                          className="flex-1 h-12 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold tracking-wider text-slate-900 focus:outline-none focus:border-[#00bd6f]"
+                          className="flex-1 h-12 px-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold tracking-wider text-slate-900 focus:outline-none focus:border-[#00bd6f] disabled:bg-slate-100 disabled:text-slate-600"
                         />
                         <button
                           type="button"
@@ -1494,58 +1339,6 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                         </button>
                       </div>
                       {panError && <p className="text-rose-500 text-xs font-semibold mt-1">{panError}</p>}
-                    </div>
-
-                    {/* Optional PAN Card Photo */}
-                    <div>
-                      <label className="text-xs font-semibold text-slate-600 mb-1 block">
-                        PAN Card Photo {isPanVerified ? "(Optional)" : "(Required for manual review)"}
-                      </label>
-                      <div
-                        onClick={() => {
-                          const input = document.createElement("input");
-                          input.type = "file";
-                          input.accept = "image/*";
-                          input.onchange = async (e: any) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setIsUploadingPan(true);
-                              setPanError(null);
-                              try {
-                                const url = await uploadFileToCloudflare(file, "pan_card.jpg");
-                                setPanCardPhoto(url);
-                              } catch (err: any) {
-                                console.error("PAN card upload error:", err);
-                                setPanError(err.message || "Failed to upload PAN card image");
-                              } finally {
-                                setIsUploadingPan(false);
-                              }
-                            }
-                          };
-                          input.click();
-                        }}
-                        className="p-3 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors h-14 px-4 overflow-hidden"
-                      >
-                        {isUploadingPan ? (
-                          <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <Loader2 size={16} className="animate-spin text-[#00bd6f]" /> Uploading PAN...
-                          </div>
-                        ) : panCardPhoto ? (
-                          <div className="flex items-center justify-between w-full">
-                            <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
-                              <CheckCircle2 size={14} /> PAN Image Uploaded
-                            </span>
-                            <span className="text-xs text-slate-400">Change</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between w-full">
-                            <span className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
-                              <Upload size={14} className="text-[#00bd6f]" /> Upload PAN Card Image
-                            </span>
-                            <span className="text-xs text-slate-400">JPG/PNG</span>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
                 </div>

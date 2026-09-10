@@ -50,9 +50,10 @@ export const PartnerStoreTrackingView: React.FC<PartnerStoreTrackingViewProps> =
   ];
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const deliveryFee = orderType === 'Delivery' ? 150 : 0;
+  const deliveryFee = orderType === 'Delivery' ? null : 0;
+  const deliveryFeeError = orderType === 'Delivery' && deliveryFee === null;
   const taxes = subtotal * 0.18;
-  const total = subtotal + deliveryFee + taxes;
+  const total = subtotal + (deliveryFee ?? 0) + taxes;
 
   return (
     <div className="min-h-screen bg-[#FFFFFF] pb-24 font-sans">
@@ -200,7 +201,11 @@ export const PartnerStoreTrackingView: React.FC<PartnerStoreTrackingViewProps> =
             {orderType === 'Delivery' && (
               <div className="flex justify-between text-[13px]">
                 <span className="text-slate-500">Delivery Fee</span>
-                <span className="font-medium text-slate-900">₹{deliveryFee}</span>
+                {deliveryFee !== null ? (
+                  <span className="font-medium text-slate-900">₹{deliveryFee}</span>
+                ) : (
+                  <span className="text-red-500 font-medium text-[12px]">Unable to calculate</span>
+                )}
               </div>
             )}
             <div className="flex justify-between text-[13px]">

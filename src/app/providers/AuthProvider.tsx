@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, ReactNode } from 'react';
 import { useVerifyToken, logout as apiLogout } from '@/api/auth';
 import { UNAUTHORIZED_EVENT } from '@/api/fetcher';
 import { useAuthStore } from '@/app/store';
-import { clearSecureStorage, setSecureToken } from '@/utils/security/secureStorage';
+import { clearSecureStorage } from '@/utils/security/secureStorage';
+import { invalidateOnboardingCache } from '@/app/routes/ProtectedRoute';
 
 import { syncDeviceToken, unregisterPushNotifications } from '@/services/push';
 
@@ -12,7 +13,7 @@ interface AuthContextValue {
   partnerId: string | null;
   partnerRole: string | null;
   partnerEmail: string | null;
-  login: (token?: string, partnerData?: any) => void;
+  login: (partnerData?: any) => void;
   logout: () => Promise<void>;
   mutate: () => Promise<any>;
 }
@@ -36,11 +37,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         partnerRole: data.user.role || 'DELIVERY_PARTNER',
         partnerEmail: data.user.email || null,
       });
-      try {
-        sessionStorage.setItem('delivery_partner_data', JSON.stringify(data.user));
-      } catch {
-        // non-fatal
-      }
       void syncDeviceToken();
     } else if (error || (data && !data.success)) {
       useAuthStore.setState({
@@ -62,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onUnauthorized = () => {
       if (!useAuthStore.getState().isLoggedIn) return;
       clearSecureStorage();
+      invalidateOnboardingCache();
       useAuthStore.getState().logout();
       mutate(undefined, false);
     };
@@ -69,10 +66,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   }, [mutate]);
 
-  const login = (token?: string, partnerData?: any) => {
-    if (token) {
-      setSecureToken(token);
-    }
+  const login = (partnerData?: any) => {
+    // Auth is HttpOnly-cookie based — the backend never returns a token in the
+    // body, so there is nothing to persist on the client.
     useAuthStore.setState({
       isLoggedIn: true,
       isLoadingAuth: false,
@@ -80,13 +76,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       partnerRole: partnerData?.role || 'DELIVERY_PARTNER',
       partnerEmail: partnerData?.email || null,
     });
-    if (partnerData) {
-      try {
-        sessionStorage.setItem('delivery_partner_data', JSON.stringify(partnerData));
-      } catch {
-        // non-fatal
-      }
-    }
     void syncDeviceToken();
     mutate();
   };
@@ -97,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiLogout().catch(() => {});
     } finally {
       clearSecureStorage();
+      invalidateOnboardingCache();
       useAuthStore.getState().logout();
       mutate(undefined, false);
     }

@@ -5,16 +5,19 @@ import { get } from '@/api/fetcher';
 import { LoadingSpinner } from '@/shared/components/layout';
 
 /**
- * Read the persisted onboarding-complete flag.  We store it in localStorage
- * so the flag survives app restarts.  The key is per-partner (scoped by
- * partnerId stored in the auth store) so switching accounts works correctly.
+ * Onboarding-complete state is fetched from the backend (GET /delivery/onboarding)
+ * and cached in memory for the lifetime of the session. Nothing is persisted to
+ * localStorage — a cold start always asks the API, so admin-side approval is
+ * picked up even if this device was previously told the partner was incomplete.
  */
-function isOnboardingComplete(partnerId: string | null): boolean {
-  if (!partnerId) return false;
-  try {
-    return localStorage.getItem(`onboarding_complete_${partnerId}`) === 'true';
-  } catch {
-    return false;
+const onboardingCache = new Map<string, boolean>();
+
+/** Drop the cached flag (e.g. after onboarding is submitted or on logout). */
+export function invalidateOnboardingCache(partnerId?: string | null): void {
+  if (partnerId) {
+    onboardingCache.delete(partnerId);
+  } else {
+    onboardingCache.clear();
   }
 }
 
@@ -25,32 +28,30 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [backendCheckDone, setBackendCheckDone] = useState(false);
   const [backendOnboardingComplete, setBackendOnboardingComplete] = useState<boolean | null>(null);
 
-  // If localStorage flag is already set, skip the backend check
-  const localFlag = isOnboardingComplete(partnerId);
+  // In-memory flag (no storage) — if present, skip the backend round-trip
+  const cached = partnerId ? onboardingCache.get(partnerId) : undefined;
 
   useEffect(() => {
-    if (localFlag || !partnerId) {
+    if (cached !== undefined || !partnerId) {
       setBackendCheckDone(true);
       return;
     }
-    // localStorage flag missing -- check backend as fallback
+    // No cached flag — ask the backend
     (async () => {
       try {
         const data = await get<Record<string, any>>('/delivery/onboarding');
         const status = data?.onboardingStatus;
         const isComplete = status === 'COMPLETE';
+        onboardingCache.set(partnerId, isComplete);
         setBackendOnboardingComplete(isComplete);
-        if (isComplete) {
-          // Restore the localStorage flag so future loads are fast
-          try { localStorage.setItem(`onboarding_complete_${partnerId}`, 'true'); } catch {}
-        }
       } catch {
+        onboardingCache.set(partnerId, false);
         setBackendOnboardingComplete(false);
       } finally {
         setBackendCheckDone(true);
       }
     })();
-  }, [partnerId, localFlag]);
+  }, [partnerId, cached]);
 
   if (isLoadingAuth) {
     return <LoadingSpinner />;
@@ -65,8 +66,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <LoadingSpinner />;
   }
 
-  // Allow access if either localStorage flag or backend says onboarding is complete
-  const onboardingAllowed = localFlag || backendOnboardingComplete === true;
+  // Allow access if the in-memory flag or the backend says onboarding is complete
+  const onboardingAllowed = cached === true || backendOnboardingComplete === true;
 
   if (!onboardingAllowed) {
     return <Navigate to="/onboarding" replace />;

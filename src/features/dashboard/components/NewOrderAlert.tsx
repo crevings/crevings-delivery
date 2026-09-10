@@ -14,12 +14,37 @@ interface NewOrderAlertProps {
 export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, onAccept, onReject, order }) => {
   const [rejectStep, setRejectStep] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [timeLeft, setTimeLeft] = useState(12);
   
   useEffect(() => {
     if (isOpen && !rejectStep) {
       playOrderAlertSound();
     }
   }, [isOpen, rejectStep]);
+
+  // 12-second countdown timer for popup dismissal and auto-timeout
+  useEffect(() => {
+    if (!isOpen) {
+      setTimeLeft(12);
+      return;
+    }
+
+    setTimeLeft(12);
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Auto-reject / dismiss on 12s timeout
+          if (onReject) onReject('Timeout');
+          onClose();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   // Reset state when the modal opens/closes
   useEffect(() => {
@@ -75,6 +100,12 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
             <div className="bg-emerald-50 p-6 flex flex-col items-center relative overflow-hidden">
                <div className="absolute inset-0 bg-emerald-500/10 animate-pulse"></div>
                
+               {/* 12s Countdown badge */}
+               <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-emerald-600 text-white text-xs font-black px-2.5 py-1 rounded-full shadow-md animate-pulse">
+                 <span>⏱️</span>
+                 <span>{timeLeft}s</span>
+               </div>
+               
                <div className="relative z-10 w-20 h-20 rounded-full border-4 border-emerald-100 flex items-center justify-center mb-3 bg-white shadow-sm">
                  <div className="text-emerald-500 animate-bounce mt-2">
                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -88,6 +119,14 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                <p className="relative z-10 text-xs font-semibold text-slate-500 uppercase tracking-widest mt-1">
                  Order #{order.displayOrderNumber || order.displayOrderId || (order.id && order.id.length > 12 ? order.id.slice(-8).toUpperCase() : order.id)}
                </p>
+
+               {/* Countdown progress line */}
+               <div className="w-full bg-emerald-200 h-1.5 rounded-full mt-4 overflow-hidden relative z-10">
+                 <div 
+                   className="bg-emerald-600 h-full transition-all duration-1000 ease-linear rounded-full"
+                   style={{ width: `${(timeLeft / 12) * 100}%` }}
+                 />
+               </div>
             </div>
 
             <div className="p-6 space-y-6">
@@ -116,7 +155,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1.5">Pickup Location</p>
                        <p className="text-[15px] font-bold text-slate-900 leading-tight truncate">{order.restaurantName || 'Restaurant'}</p>
                        <p className="text-[13px] font-medium text-blue-600 mt-1 flex items-center gap-1">
-                         <Navigation size={12}/> {order.pickupDistanceKm ? `${order.pickupDistanceKm} km away` : (order.restaurantAddress || 'Restaurant pickup')}
+                         <Navigation size={12} className="shrink-0"/> {order.pickupDistanceKm ? `${String(order.pickupDistanceKm).replace(/\s*km\s*$/i, '').trim()} km away` : (order.restaurantAddress || 'Restaurant pickup')}
                        </p>
                     </div>
                  </div>
@@ -127,10 +166,10 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                        <div className="w-full h-full rounded-full bg-rose-500 border border-rose-600 shadow-sm"></div>
                     </div>
                     <div className="flex-1 min-w-0">
-                       <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1.5">Drop Customer</p>
-                       <p className="text-[15px] font-bold text-slate-900 leading-tight truncate">{order.customer || 'Customer'}</p>
+                       <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1.5">Drop Location</p>
+                       <p className="text-[15px] font-bold text-slate-900 leading-tight truncate">{order.customer || order.customerName || 'Customer'}</p>
                        <p className="text-[13px] font-medium text-slate-500 mt-1 flex items-center gap-1">
-                         <MapPin size={12}/> {order.address || 'Delivery Address'}
+                         <MapPin size={12} className="shrink-0"/> <span className="line-clamp-2">{order.address || 'Delivery Address'}</span>
                        </p>
                     </div>
                  </div>

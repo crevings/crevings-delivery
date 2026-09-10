@@ -2,8 +2,8 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Home, ShoppingBag, Wallet, UserCircle, Settings, LogOut, Package } from 'lucide-react';
 import { Tab } from '@/types';
+import { useAuth } from '@/app/providers';
 import { useAuthStore, useOrdersStore } from '@/app/store';
-import { logout as apiLogout } from '@/api/auth';
 
 interface SideNavProps {
   currentTab?: Tab;
@@ -12,7 +12,7 @@ interface SideNavProps {
 export const SideNav: React.FC<SideNavProps> = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const logout = useAuthStore(s => s.logout);
+  const { logout } = useAuth();
   const partnerEmail = useAuthStore(s => s.partnerEmail);
   const partnerId = useAuthStore(s => s.partnerId);
   const orders = useOrdersStore(s => s.orders);
@@ -34,12 +34,7 @@ export const SideNav: React.FC<SideNavProps> = () => {
   ];
 
   const handleLogout = async () => {
-    try {
-      await apiLogout();
-    } catch {
-      // non-fatal
-    }
-    logout();
+    await logout();
     navigate('/login');
   };
 

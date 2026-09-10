@@ -86,10 +86,11 @@ export const PartnerStoreCheckoutView: React.FC<PartnerStoreCheckoutViewProps> =
   ];
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const deliveryFee = orderType === 'Delivery' ? 150 : 0;
+  const deliveryFee = orderType === 'Delivery' ? null : 0;
+  const deliveryFeeError = orderType === 'Delivery' && deliveryFee === null;
   const discountAmount = appliedCoupon ? appliedCoupon.discount : 0;
   const taxes = (subtotal - discountAmount) * 0.18;
-  const total = subtotal - discountAmount + deliveryFee + taxes;
+  const total = subtotal - discountAmount + (deliveryFee ?? 0) + taxes;
 
   if (showProcessing) {
     return (
@@ -381,7 +382,11 @@ export const PartnerStoreCheckoutView: React.FC<PartnerStoreCheckoutViewProps> =
             {orderType === 'Delivery' && (
               <div className="flex justify-between text-[13px]">
                 <span className="text-slate-600">Delivery Fee</span>
-                <span className="font-medium text-slate-900">₹{deliveryFee}</span>
+                {deliveryFee !== null ? (
+                  <span className="font-medium text-slate-900">₹{deliveryFee}</span>
+                ) : (
+                  <span className="text-red-500 font-medium text-[12px]">Unable to calculate</span>
+                )}
               </div>
             )}
             <div className="flex justify-between text-[13px]">

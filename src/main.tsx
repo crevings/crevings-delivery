@@ -11,7 +11,6 @@ import { LocationPermissionGate } from '@/app/gates/LocationPermissionGate';
 import { env } from '@/config/env';
 import { useAuthStore } from '@/app/store';
 import { logInfo } from '@/utils/security/auditLog';
-import { usePartnerStore } from '@/app/store';
 import { initPushNotifications } from '@/services/push';
 import './index.css';
 
@@ -20,42 +19,9 @@ logInfo('Application initializing', { mode: import.meta.env.MODE });
 // Initialize Firebase Cloud Messaging push notifications (on native mobile devices)
 void initPushNotifications();
 
-const token = sessionStorage.getItem('delivery_auth_token');
-
-// Optimistically restore partner identity if present in sessionStorage while SWR verifies cookie/token
-interface PartnerData {
-  referenceId?: string;
-  id?: string;
-  role?: string;
-  email?: string;
-  name?: string;
-  phone?: string;
-}
-let persistedPartnerData: PartnerData = {};
-try {
-  const raw = sessionStorage.getItem('delivery_partner_data');
-  if (raw) {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      persistedPartnerData = parsed as PartnerData;
-    }
-  }
-} catch {
-  persistedPartnerData = {};
-}
-
-if (persistedPartnerData.referenceId || persistedPartnerData.id || token) {
-  useAuthStore.setState({
-    isLoggedIn: !!token,
-    partnerId: persistedPartnerData.referenceId || persistedPartnerData.id || null,
-    partnerRole: persistedPartnerData.role || null,
-    partnerEmail: persistedPartnerData.email || null,
-  });
-}
-
-// Restore the driver's online/offline availability status (persisted on toggle
-// in the Dashboard) so a page refresh doesn't silently take the driver offline.
-usePartnerStore.setState({ isOnline: localStorage.getItem('delivery_is_online') === '1' });
+// Let AuthProvider verify the live session from backend cookies. The driver's
+// online/offline status is fetched from the backend by the Dashboard on mount
+// (getPartnerProfile), so nothing is restored from client storage.
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

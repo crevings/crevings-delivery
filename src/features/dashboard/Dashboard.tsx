@@ -15,8 +15,7 @@ import { acceptOrder, mapActiveOrder, respondToDispatch, useActiveOrders } from 
 import { toggleOnline, getPartnerProfile } from '@/api/partner';
 import { BASE_URL } from '@/api/fetcher';
 import { useOrdersStore, usePartnerStore } from '@/app/store';
-import { useAuthStore } from '@/app/store';
-import { createSSEClient } from '@/lib/sse-client';
+import { createMercureRealtimeClient } from '@/lib/sse-client';
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -44,16 +43,6 @@ export const Dashboard: React.FC = () => {
           if (res.profile.isOnline !== undefined) {
             setIsOnline(Boolean(res.profile.isOnline));
           }
-          // If the backend confirms onboarding is complete, persist the flag
-          // so ProtectedRoute allows app access on next login/restart.
-          if (res.profile.onboardingStatus === 'COMPLETED' || res.profile.status === 'Active') {
-            const pid = useAuthStore.getState().partnerId;
-            if (pid) {
-              try {
-                localStorage.setItem(`onboarding_complete_${pid}`, 'true');
-              } catch { /* non-fatal */ }
-            }
-          }
         }
       } catch (err) {
         // non-fatal
@@ -78,11 +67,6 @@ export const Dashboard: React.FC = () => {
     try {
       await toggleOnline(next);
       setIsOnline(next);
-      try {
-        localStorage.setItem('delivery_is_online', next ? '1' : '0');
-      } catch {
-        // non-fatal
-      }
     } catch (err: any) {
       alert(err.message || 'Failed to update availability status');
     }
@@ -102,20 +86,15 @@ export const Dashboard: React.FC = () => {
     }
   }, [isOnline, isFloatingCashBlocked]);
 
-  // Connect to SSE stream for targeted real-time dispatch events (sequential ping loop)
+  // Connect directly to Mercure Hub for real-time dispatch alerts (zero Node.js SSE load)
   useEffect(() => {
     if (!isOnline) return;
 
-    const token = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('delivery_auth_token') : null;
-    const sseUrl = token 
-      ? `${BASE_URL}/delivery/stream?token=${encodeURIComponent(token)}` 
-      : `${BASE_URL}/delivery/stream`;
-
-    const sseClient = createSSEClient({
-      url: sseUrl,
+    const realtimeClient = createMercureRealtimeClient({
+      scope: 'delivery',
       events: {
         connected: (payload: any) => {
-          console.log('[SSE] Connected to dispatch stream for partner:', payload?.partnerId);
+          console.log('[Mercure Realtime] Connected to dispatch stream for partner:', payload?.partnerId);
         },
         floating_cash_update: (payload: any) => {
           if (payload && payload.floatingCash !== undefined) {
@@ -123,18 +102,22 @@ export const Dashboard: React.FC = () => {
           }
         },
         dispatch: (payload: any) => {
-          console.log('[SSE] Received targeted DISPATCH_REQUEST:', payload);
+          console.log('[Mercure Realtime] Received targeted DISPATCH_REQUEST:', payload);
           if (isFloatingCashBlocked) return;
           if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
             // Dedup: don't overwrite existing popup — driver is already viewing one.
-            // The busy lock + SSE status gate prevent double-pings at the backend level.
+            // The busy lock + status gate prevent double-pings at the backend level.
             if (showNewOrderAlert) {
-              console.log('[SSE] Ignoring DISPATCH_REQUEST — popup already showing:', payload.orderId);
+              console.log('[Mercure Realtime] Ignoring DISPATCH_REQUEST — popup already showing:', payload.orderId);
               return;
             }
             const formatted: Order = {
               id: payload.orderId,
-              customer: payload.customerName || 'Customer',
+              orderId: payload.orderId,
+              displayOrderId: payload.displayOrderId || payload.displayOrderNumber,
+              displayOrderNumber: payload.displayOrderNumber || payload.displayOrderId,
+              customer: payload.customerName || payload.customer || 'Customer',
+              customerName: payload.customerName || payload.customer || 'Customer',
               type: 'Delivery',
               channel: 'Crevings',
               items: payload.itemsSummary || `${payload.itemsCount || 1} Items`,
@@ -142,13 +125,13 @@ export const Dashboard: React.FC = () => {
               status: 'Incoming',
               time: '15:00',
               paymentStatus: payload.isCOD ? 'Unpaid' : 'Paid',
-              address: payload.dropoffAddress || payload.deliveryAddress || 'Customer Address',
+              address: payload.dropoffAddress || payload.deliveryAddress || payload.customerAddress || 'Delivery Address',
               restaurantName: payload.restaurantName || 'Restaurant',
               restaurantAddress: payload.restaurantAddress,
               restaurantPhone: payload.restaurantPhone,
-              pickupDistanceKm: payload.pickupDistanceKm || (payload.distanceKm ? `${payload.distanceKm} km` : undefined),
-              deliveryFee: payload.deliveryFee !== undefined && payload.deliveryFee !== null ? Number(payload.deliveryFee) : 30,
-              driverEarnings: payload.driverEarnings !== undefined && payload.driverEarnings !== null ? Number(payload.driverEarnings) : (payload.deliveryFee ? Number(payload.deliveryFee) : 30),
+              pickupDistanceKm: payload.pickupDistanceKm || (payload.distanceKm ? String(payload.distanceKm) : undefined),
+              deliveryFee: payload.deliveryFee != null ? Number(payload.deliveryFee) : undefined,
+              driverEarnings: payload.driverEarnings != null ? Number(payload.driverEarnings) : (payload.deliveryFee != null ? Number(payload.deliveryFee) : undefined),
             };
             setPendingOrder(formatted);
             setShowNewOrderAlert(true);
@@ -158,10 +141,10 @@ export const Dashboard: React.FC = () => {
       },
     });
 
-    sseClient.connect();
+    realtimeClient.connect();
 
     return () => {
-      sseClient.close();
+      realtimeClient.close();
     };
   }, [isOnline, isFloatingCashBlocked]);
 
