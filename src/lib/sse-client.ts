@@ -1,4 +1,4 @@
-import { get } from '@/api/fetcher';
+import { get, BASE_URL } from '@/api/fetcher';
 
 interface SSEClientOptions {
   /** The SSE endpoint URL */
@@ -135,13 +135,14 @@ export interface MercureRealtimeClientOptions {
 }
 
 /**
- * Mercure-exclusive real-time client for delivery partner app.
+ * Mercure-first realtime client with seamless fallback to legacy Node SSE.
  *
- * Connects directly to the Mercure Hub via EventSource with zero Node.js socket load.
- * If Mercure is down or misconfigured, it logs/throws an error to console and
- * will NOT fall back to legacy Node.js SSE.
+ * 1. Queries `/${scope}/realtime/token?scope=${scope}`
+ * 2. If mode === "mercure", connects directly to Mercure Hub (zero Node socket load).
+ * 3. If mode === "sse" or Mercure is unreachable, falls back gracefully to
+ *    legacy `${BASE_URL}/delivery/stream`.
  */
-export function createMercureRealtimeClient(options: MercureRealtimeClientOptions) {
+export function createMercureRealtimeClient(options: MercureRealtimeClientOptions): SSEClient {
   const {
     scope,
     events = {},
@@ -152,124 +153,71 @@ export function createMercureRealtimeClient(options: MercureRealtimeClientOption
     maxDelay = 10000,
   } = options;
 
-  let eventSource: EventSource | null = null;
-  let retryCount = 0;
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeClient: SSEClient | null = null;
   let closed = false;
 
-  function getDelay(): number {
-    return Math.min(baseDelay * Math.pow(2, retryCount), maxDelay);
-  }
-
-  async function connect() {
+  async function start() {
     if (closed) return;
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
 
     try {
       // 1. Fetch Mercure token and discovery information
       const res = await get<any>(`/${scope}/realtime/token?scope=${scope}`);
       const data = res?.data || res;
 
-      if (!data || data.mode !== 'mercure' || !data.hubUrl || !data.topics?.length) {
-        console.error(
-          `[Mercure Realtime Error] Mercure Hub is unavailable or disabled for '${scope}' (mode: ${data?.mode || 'none'}). ` +
-          `Delivery real-time stream will NOT fall back to legacy Node SSE to prevent server socket overload.`
-        );
-        onConnectionChange?.(false);
+      if (!closed && data?.mode === 'mercure' && data.hubUrl && data.topics?.length) {
+        const hubUrl = new URL(data.hubUrl);
+        data.topics.forEach((topic: string) => {
+          hubUrl.searchParams.append('topic', topic);
+        });
+        if (data.token) {
+          hubUrl.searchParams.append('authorization', data.token);
+        }
+
+        activeClient = createSSEClient({
+          url: hubUrl.toString(),
+          events,
+          onConnected,
+          onConnectionChange,
+          maxRetries,
+          baseDelay,
+          maxDelay,
+        });
+        activeClient.connect();
         return;
       }
-
-      // 2. Build Mercure EventSource URL
-      const hubUrl = new URL(data.hubUrl);
-      data.topics.forEach((topic: string) => {
-        hubUrl.searchParams.append('topic', topic);
-      });
-      if (data.token) {
-        hubUrl.searchParams.append('authorization', data.token);
-      }
-
-      eventSource = new EventSource(hubUrl.toString());
-
-      // 3. Register custom event listeners (e.g. 'dispatch', 'floating_cash_update', 'connected')
-      for (const [eventName, handler] of Object.entries(events)) {
-        eventSource.addEventListener(eventName, (e: MessageEvent) => {
-          try {
-            const parsed = JSON.parse(e.data);
-            handler(parsed);
-          } catch {
-            handler(e.data);
-          }
-        });
-      }
-
-      // Also listen to default message events if sent untyped
-      eventSource.onmessage = (e: MessageEvent) => {
-        try {
-          const parsed = JSON.parse(e.data);
-          if (parsed?.type && events[parsed.type]) {
-            events[parsed.type](parsed);
-          } else if (events['message']) {
-            events['message'](parsed);
-          }
-        } catch {
-          if (events['message']) events['message'](e.data);
-        }
-      };
-
-      eventSource.onopen = () => {
-        retryCount = 0;
-        console.log(`[Mercure Realtime] Connected directly to Mercure Hub for ${scope}`);
-        onConnectionChange?.(true);
-        onConnected?.();
-      };
-
-      eventSource.onerror = (err) => {
-        if (closed) return;
-        eventSource?.close();
-        eventSource = null;
-        onConnectionChange?.(false);
-
-        if (retryCount >= maxRetries) {
-          console.error(`[Mercure Realtime Error] Max retries (${maxRetries}) reached. Mercure hub connection failed.`);
-          return;
-        }
-
-        const delay = getDelay();
-        console.error(`[Mercure Realtime Error] Connection lost to Mercure Hub. Retrying in ${delay}ms...`, err);
-        retryCount++;
-        reconnectTimer = setTimeout(connect, delay);
-      };
     } catch (err: any) {
-      console.error(
-        `[Mercure Realtime Error] Failed to discover/connect to Mercure hub for ${scope}:`,
-        err?.message || err
-      );
-      if (retryCount < maxRetries) {
-        const delay = getDelay();
-        retryCount++;
-        reconnectTimer = setTimeout(connect, delay);
-      }
+      console.warn(`[Mercure Delivery] Discovery failed for ${scope}, falling back to legacy SSE:`, err?.message || err);
     }
-  }
 
-  function close() {
-    closed = true;
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+    // Fallback to legacy Node.js SSE endpoint
+    if (!closed) {
+      const fallbackUrl = `${BASE_URL}/delivery/stream`;
+      console.log(`[Delivery SSE Fallback] Connecting to legacy SSE stream at ${fallbackUrl}`);
+      activeClient = createSSEClient({
+        url: fallbackUrl,
+        events,
+        onConnected,
+        onConnectionChange,
+        maxRetries,
+        baseDelay,
+        maxDelay,
+      });
+      activeClient.connect();
     }
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    onConnectionChange?.(false);
   }
 
   return {
-    connect,
-    close,
+    connect: () => {
+      closed = false;
+      start();
+    },
+    close: () => {
+      closed = true;
+      activeClient?.close();
+      activeClient = null;
+    },
+    reconnect: () => {
+      activeClient?.reconnect();
+    },
   };
 }
