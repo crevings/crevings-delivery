@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   MessageSquare,
@@ -23,6 +23,7 @@ import { useAuth } from "@/app/providers";
 import { useAuthStore } from "@/app/store";
 import { clearSecureStorage } from "@/utils/security/secureStorage";
 import { LoadingSpinner } from "@/shared/components/layout";
+import { OtpInput } from "@/components/ui/OtpInput";
 
 export interface DeliveryAuthUser {
   referenceId?: string;
@@ -96,88 +97,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [showRestoredModal, setShowRestoredModal] = useState(false);
   const [isNewUserLogin, setIsNewUserLogin] = useState(false);
 
-  const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const handleOtpChange = (value: string, index: number) => {
-    setOtpError(null);
-    setApiError(null);
-
-    const digitsOnly = value.replace(/\D/g, "");
-
-    // Handle multi-digit entry (e.g. browser autofill)
-    if (digitsOnly.length > 1) {
-      const newOtp = [...otp];
-      const chars = digitsOnly.slice(0, 6 - index).split("");
-      chars.forEach((char, i) => {
-        if (index + i < 6) {
-          newOtp[index + i] = char;
-        }
-      });
-      setOtp(newOtp);
-      const nextFocus = Math.min(index + chars.length, 5);
-      otpInputs.current[nextFocus]?.focus();
-      return;
-    }
-
-    // Single digit entry
-    const newOtp = [...otp];
-    newOtp[index] = digitsOnly;
-    setOtp(newOtp);
-
-    // Auto shift to next block seamlessly if digit entered
-    if (digitsOnly && index < 5) {
-      otpInputs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>, startIndex: number) => {
-    e.preventDefault();
-    setOtpError(null);
-    setApiError(null);
-
-    const pastedText = e.clipboardData.getData("text").replace(/\D/g, "");
-    if (!pastedText) return;
-
-    const newOtp = [...otp];
-    const digits = pastedText.slice(0, 6).split("");
-    const targetStart = digits.length === 6 ? 0 : startIndex;
-
-    digits.forEach((char, i) => {
-      if (targetStart + i < 6) {
-        newOtp[targetStart + i] = char;
-      }
-    });
-
-    setOtp(newOtp);
-
-    const nextFocusIndex = Math.min(targetStart + digits.length, 5);
-    otpInputs.current[nextFocusIndex]?.focus();
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === "Backspace") {
-      if (!otp[index] && index > 0) {
-        e.preventDefault();
-        const newOtp = [...otp];
-        newOtp[index - 1] = "";
-        setOtp(newOtp);
-        otpInputs.current[index - 1]?.focus();
-      } else if (otp[index]) {
-        const newOtp = [...otp];
-        newOtp[index] = "";
-        setOtp(newOtp);
-      }
-    } else if (e.key === "ArrowLeft" && index > 0) {
-      e.preventDefault();
-      otpInputs.current[index - 1]?.focus();
-    } else if (e.key === "ArrowRight" && index < 5) {
-      e.preventDefault();
-      otpInputs.current[index + 1]?.focus();
-    }
-  };
-
-  const verifyOtpAndLogin = async () => {
-    const enteredOtp = otp.join("");
+  const verifyOtpAndLogin = async (overrideOtp?: string) => {
+    const enteredOtp = overrideOtp || otp.join("");
     if (enteredOtp.length < 6) return;
 
     setIsVerifying(true);
@@ -489,34 +410,29 @@ export const LoginView: React.FC<LoginViewProps> = ({
               </p>
             </div>
 
-            <div className="flex justify-between gap-2">
-              {otp.map((digit, index) => (
-                <input
-                  key={index}
-                  ref={(el) => {
-                    otpInputs.current[index] = el;
-                  }}
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={digit}
-                  onChange={(e) => handleOtpChange(e.target.value, index)}
-                  onKeyDown={(e) => handleKeyDown(e, index)}
-                  onPaste={(e) => handleOtpPaste(e, index)}
-                  onFocus={(e) => e.target.select()}
-                  className={`w-[46px] h-[54px] text-center text-xl font-bold rounded-xl border transition-all focus:outline-none ${
-                    otpError
-                      ? "border-rose-300 bg-rose-50 text-rose-600"
-                      : digit
-                      ? "border-[#00bd6f] bg-emerald-50 text-[#00bd6f]"
-                      : "border-slate-200 bg-white focus:border-[#00bd6f]"
-                  }`}
-                />
-              ))}
-            </div>
+            <OtpInput
+              length={6}
+              value={otp.join("")}
+              onChange={(val) => {
+                setOtpError(null);
+                setApiError(null);
+                const arr = val.split("");
+                while (arr.length < 6) arr.push("");
+                setOtp(arr);
+              }}
+              onComplete={(val) => {
+                const arr = val.split("");
+                while (arr.length < 6) arr.push("");
+                setOtp(arr);
+                verifyOtpAndLogin(val);
+              }}
+              status={otpError || apiError ? "error" : isVerifying ? "success" : "idle"}
+              size="md"
+              autoFocus
+            />
 
             {otpError && (
-              <p className="text-rose-500 text-[13px] font-medium animate-in fade-in">
+              <p className="text-rose-500 text-[13px] font-medium animate-in fade-in text-center">
                 {otpError}
               </p>
             )}
@@ -535,7 +451,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 Back
               </button>
               <button
-                onClick={verifyOtpAndLogin}
+                onClick={() => verifyOtpAndLogin()}
                 disabled={otp.join("").length < 6 || isVerifying}
                 className={`flex-1 h-14 rounded-xl font-semibold text-[16px] flex items-center justify-center transition-all ${
                   otp.join("").length === 6 && !isVerifying

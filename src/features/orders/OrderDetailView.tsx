@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Headset, Store, User, Phone, Navigation, MessageCircle, 
   Info, ShoppingBag, ChevronDown, CheckCircle, Truck, Camera, X
@@ -10,6 +10,7 @@ import { ChatView } from './ChatView';
 import { post } from '@/api/fetcher';
 import { openMapsNavigation } from '@/utils/navigation';
 import { updateOrderStatus } from '@/api/orders';
+import { OtpInput } from '@/components/ui/OtpInput';
 
 interface OrderDetailViewProps {
   order: Order;
@@ -54,93 +55,6 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
   const [selectedPayment, setSelectedPayment] = useState<'Cash' | 'UPI' | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
-
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Focus the first OTP input when either OTP sheet opens
-  useEffect(() => {
-    let timer: any = null;
-    if (showPickupOtpSheet || showDeliveryOtpSheet) {
-      timer = setTimeout(() => {
-        otpRefs.current[0]?.focus();
-      }, 100);
-    }
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [showPickupOtpSheet, showDeliveryOtpSheet]);
-
-  const handleOtpChange = (val: string, index: number) => {
-    if (otpError) setOtpError(null);
-    const digitsOnly = val.replace(/\D/g, '');
-
-    // Handle multi-digit (e.g. browser autofill or rapid input)
-    if (digitsOnly.length > 1) {
-      const newOtp = [...otpValue];
-      const chars = digitsOnly.slice(0, 6 - index).split('');
-      chars.forEach((char, i) => {
-        if (index + i < 6) {
-          newOtp[index + i] = char;
-        }
-      });
-      setOtpValue(newOtp);
-      const nextFocus = Math.min(index + chars.length, 5);
-      otpRefs.current[nextFocus]?.focus();
-      return;
-    }
-
-    // Single digit entry
-    const newOtp = [...otpValue];
-    newOtp[index] = digitsOnly;
-    setOtpValue(newOtp);
-
-    // Auto-advance to next box if digit entered
-    if (digitsOnly && index < 5) {
-      otpRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === 'Backspace') {
-      if (!otpValue[index] && index > 0) {
-        e.preventDefault();
-        const newOtp = [...otpValue];
-        newOtp[index - 1] = '';
-        setOtpValue(newOtp);
-        otpRefs.current[index - 1]?.focus();
-      } else if (otpValue[index]) {
-        const newOtp = [...otpValue];
-        newOtp[index] = '';
-        setOtpValue(newOtp);
-      }
-    } else if (e.key === 'ArrowLeft' && index > 0) {
-      e.preventDefault();
-      otpRefs.current[index - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && index < 5) {
-      e.preventDefault();
-      otpRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>, startIndex: number) => {
-    e.preventDefault();
-    const pastedText = e.clipboardData.getData('text').replace(/\D/g, '');
-    if (!pastedText) return;
-
-    const newOtp = [...otpValue];
-    const digits = pastedText.slice(0, 6).split('');
-    const targetStart = digits.length === 6 ? 0 : startIndex;
-
-    digits.forEach((char, i) => {
-      if (targetStart + i < 6) {
-        newOtp[targetStart + i] = char;
-      }
-    });
-
-    setOtpValue(newOtp);
-    const nextFocusIndex = Math.min(targetStart + digits.length, 5);
-    otpRefs.current[nextFocusIndex]?.focus();
-  };
 
   useEffect(() => {
     if (order.status) {
@@ -281,8 +195,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     handleBack();
   };
 
-  const handlePickupOtpVerify = async () => {
-    const pin = otpValue.join('').trim();
+  const handlePickupOtpVerify = async (overridePin?: string) => {
+    const pin = (overridePin || otpValue.join('')).trim();
     setOtpError(null);
     setIsVerifying(true);
     try {
@@ -328,8 +242,8 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     setShowDeliveryOtpSheet(true);
   };
 
-  const handleDeliveryOtpVerify = async () => {
-    const pin = otpValue.join('').trim();
+  const handleDeliveryOtpVerify = async (overridePin?: string) => {
+    const pin = (overridePin || otpValue.join('')).trim();
     setOtpError(null);
     setIsVerifying(true);
     try {
@@ -632,24 +546,26 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </button>
             </div>
             <p className="text-slate-500 mb-4 text-[15px]">Ask restaurant for the 6-digit PIN to confirm pickup.</p>
-            <div className="flex gap-2 justify-between mb-4">
-              {[0, 1, 2, 3, 4, 5].map((index) => (
-                <input 
-                  key={index}
-                  ref={(el) => { otpRefs.current[index] = el; }}
-                  type="tel"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={1}
-                  autoComplete="one-time-code"
-                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                  value={otpValue[index]}
-                  onChange={(e) => handleOtpChange(e.target.value, index)}
-                  onKeyDown={(e) => handleOtpKeyDown(e, index)}
-                  onPaste={(e) => handleOtpPaste(e, index)}
-                  onFocus={(e) => e.target.select()}
-                />
-              ))}
+            <div className="mb-4">
+              <OtpInput
+                length={6}
+                value={otpValue.join('')}
+                onChange={(val) => {
+                  setOtpError(null);
+                  const arr = val.split('');
+                  while (arr.length < 6) arr.push('');
+                  setOtpValue(arr);
+                }}
+                onComplete={(val) => {
+                  const arr = val.split('');
+                  while (arr.length < 6) arr.push('');
+                  setOtpValue(arr);
+                  handlePickupOtpVerify(val);
+                }}
+                status={otpError ? "error" : isVerifying ? "success" : "idle"}
+                size="md"
+                autoFocus
+              />
             </div>
             {otpError && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200">
@@ -657,9 +573,9 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </div>
             )}
             <button 
-              onClick={handlePickupOtpVerify}
+              onClick={() => handlePickupOtpVerify()}
               disabled={isVerifying}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
+              className="w-full h-14 bg-[#00bd6f] active:bg-emerald-600 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60 shadow-xs"
             >
               {isVerifying ? 'Verifying PIN...' : 'Verify OTP'}
             </button>
@@ -687,7 +603,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             )}
             <button 
               onClick={handleDeliveryConfirm}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors mb-3"
+              className="w-full h-14 bg-[#00bd6f] active:bg-emerald-600 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors mb-3 shadow-xs"
             >
               Confirm
             </button>
@@ -711,24 +627,24 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
             <div className="space-y-3 mb-8">
                <button 
                   onClick={() => setSelectedPayment('Cash')}
-                  className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-colors ${selectedPayment === 'Cash' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300'}`}
+                  className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-colors ${selectedPayment === 'Cash' ? 'border-[#00bd6f] bg-emerald-50 text-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
                >
                  <span className="font-bold">Cash</span>
-                 {selectedPayment === 'Cash' && <CheckCircle size={20} />}
+                 {selectedPayment === 'Cash' && <CheckCircle size={20} className="text-[#00bd6f]" />}
                </button>
                <button 
                   onClick={() => setSelectedPayment('UPI')}
-                  className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-colors ${selectedPayment === 'UPI' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300'}`}
+                  className={`w-full p-4 rounded-xl border-2 flex items-center justify-between transition-colors ${selectedPayment === 'UPI' ? 'border-[#00bd6f] bg-emerald-50 text-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
                >
                  <span className="font-bold">UPI</span>
-                 {selectedPayment === 'UPI' && <CheckCircle size={20} />}
+                 {selectedPayment === 'UPI' && <CheckCircle size={20} className="text-[#00bd6f]" />}
                </button>
             </div>
 
             <button 
               onClick={handlePaymentSelection}
               disabled={!selectedPayment}
-              className={`w-full h-14 rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors ${!selectedPayment ? 'bg-slate-200 text-slate-400' : 'bg-blue-600 active:bg-blue-700 text-white'}`}
+              className={`w-full h-14 rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors ${!selectedPayment ? 'bg-slate-200 text-slate-400' : 'bg-[#00bd6f] active:bg-emerald-600 text-white shadow-xs'}`}
             >
               Continue
             </button>
@@ -748,24 +664,26 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </button>
             </div>
             <p className="text-slate-500 mb-6 text-[15px]">Ask customer for the 6-digit PIN to confirm delivery.</p>
-            <div className="flex gap-2 justify-between mb-4">
-              {[0, 1, 2, 3, 4, 5].map((index) => (
-                <input 
-                  key={index}
-                  ref={(el) => { otpRefs.current[index] = el; }}
-                  type="tel"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={1}
-                  autoComplete="one-time-code"
-                  className="w-12 h-14 text-center text-2xl font-bold bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
-                  value={otpValue[index]}
-                  onChange={(e) => handleOtpChange(e.target.value, index)}
-                  onKeyDown={(e) => handleOtpKeyDown(e, index)}
-                  onPaste={(e) => handleOtpPaste(e, index)}
-                  onFocus={(e) => e.target.select()}
-                />
-              ))}
+            <div className="mb-4">
+              <OtpInput
+                length={6}
+                value={otpValue.join('')}
+                onChange={(val) => {
+                  setOtpError(null);
+                  const arr = val.split('');
+                  while (arr.length < 6) arr.push('');
+                  setOtpValue(arr);
+                }}
+                onComplete={(val) => {
+                  const arr = val.split('');
+                  while (arr.length < 6) arr.push('');
+                  setOtpValue(arr);
+                  handleDeliveryOtpVerify(val);
+                }}
+                status={otpError ? "error" : isVerifying ? "success" : "idle"}
+                size="md"
+                autoFocus
+              />
             </div>
             {otpError && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 animate-in fade-in duration-200">
@@ -773,9 +691,9 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               </div>
             )}
             <button 
-              onClick={handleDeliveryOtpVerify}
+              onClick={() => handleDeliveryOtpVerify()}
               disabled={isVerifying}
-              className="w-full h-14 bg-blue-600 active:bg-blue-700 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60"
+              className="w-full h-14 bg-[#00bd6f] active:bg-emerald-600 text-white rounded-xl font-bold text-[16px] flex items-center justify-center transition-colors disabled:opacity-60 shadow-xs"
             >
               {isVerifying ? 'Verifying PIN...' : 'Verify OTP'}
             </button>

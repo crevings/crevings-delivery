@@ -28,6 +28,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { get, post, BASE_URL } from "@/api/fetcher";
 import { analyzePhotoQuality, PhotoQualityResult } from "@/shared/utils/photoIntelligence";
 import { invalidateOnboardingCache } from "@/app/routes/ProtectedRoute";
+import { OtpInput } from "@/components/ui/OtpInput";
 
 interface OnboardingViewProps {
   onComplete?: () => void;
@@ -216,8 +217,8 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     }
   };
 
-  const handleVerifyPhoneOtp = async () => {
-    const entered = phoneOtp.join("");
+  const handleVerifyPhoneOtp = async (overrideOtp?: string) => {
+    const entered = overrideOtp || phoneOtp.join("");
     if (entered.length < 6) {
       setPhoneOtpError("Please enter complete 6-digit OTP");
       return;
@@ -506,8 +507,8 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
     }
   };
 
-  const handleVerifyAadhaarOtp = async () => {
-    const cleanOtp = aadhaarOtp.join("");
+  const handleVerifyAadhaarOtp = async (overrideOtp?: string) => {
+    const cleanOtp = overrideOtp || aadhaarOtp.join("");
     if (cleanOtp.length < 6) {
       setAadhaarError("Please enter 6-digit Aadhaar OTP");
       return;
@@ -785,30 +786,31 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                         {otpCountdown > 0 && <span className="text-[11px] font-semibold text-emerald-700">{otpCountdown}s</span>}
                       </div>
 
-                      <div className="flex justify-between gap-1.5">
-                        {phoneOtp.map((digit, i) => (
-                          <input
-                            key={i}
-                            ref={(el) => {
-                              otpInputs.current[i] = el;
-                            }}
-                            type="tel"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            maxLength={1}
-                            value={digit}
-                            onChange={(e) => handleOtpDigitChange(e.target.value, i)}
-                            onKeyDown={(e) => handleOtpKeyDown(e, i)}
-                            className="w-11 h-12 text-center text-lg font-bold bg-white rounded-xl border border-emerald-300 focus:border-[#00bd6f] focus:outline-none"
-                          />
-                        ))}
-                      </div>
+                      <OtpInput
+                        length={6}
+                        value={phoneOtp.join("")}
+                        onChange={(val) => {
+                          setPhoneOtpError(null);
+                          const arr = val.split("");
+                          while (arr.length < 6) arr.push("");
+                          setPhoneOtp(arr);
+                        }}
+                        onComplete={(val) => {
+                          const arr = val.split("");
+                          while (arr.length < 6) arr.push("");
+                          setPhoneOtp(arr);
+                          handleVerifyPhoneOtp(val);
+                        }}
+                        status={phoneOtpError ? "error" : isVerifyingPhoneOtp ? "success" : "idle"}
+                        size="sm"
+                        autoFocus
+                      />
 
-                      {phoneOtpError && <p className="text-rose-500 text-xs font-semibold">{phoneOtpError}</p>}
+                      {phoneOtpError && <p className="text-rose-500 text-xs font-semibold text-center">{phoneOtpError}</p>}
 
                       <button
                         type="button"
-                        onClick={handleVerifyPhoneOtp}
+                        onClick={() => handleVerifyPhoneOtp()}
                         disabled={isVerifyingPhoneOtp}
                         className="w-full h-11 bg-[#00bd6f] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
                       >
@@ -1256,36 +1258,39 @@ export const OnboardingView: React.FC<OnboardingViewProps> = ({ onComplete, onBa
                       </div>
 
                       {aadhaarOtpSent && (
-                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2.5">
-                          <span className="text-xs font-bold text-emerald-900">Enter 6-digit Aadhaar OTP:</span>
-                          <div className="flex justify-between gap-1">
-                            {aadhaarOtp.map((d, i) => (
-                              <input
-                                key={i}
-                                type="tel"
-                                maxLength={1}
-                                value={d}
-                                onChange={(e) => {
-                                  const n = [...aadhaarOtp];
-                                  n[i] = e.target.value.replace(/\D/g, "").slice(-1);
-                                  setAadhaarOtp(n);
-                                }}
-                                className="w-10 h-11 text-center font-bold bg-white rounded-lg border border-emerald-300 focus:outline-none"
-                              />
-                            ))}
-                          </div>
+                        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3">
+                          <span className="text-xs font-bold text-emerald-900 block text-center">Enter 6-digit Aadhaar OTP:</span>
+                          <OtpInput
+                            length={6}
+                            value={aadhaarOtp.join("")}
+                            onChange={(val) => {
+                              setAadhaarError(null);
+                              const arr = val.split("");
+                              while (arr.length < 6) arr.push("");
+                              setAadhaarOtp(arr);
+                            }}
+                            onComplete={(val) => {
+                              const arr = val.split("");
+                              while (arr.length < 6) arr.push("");
+                              setAadhaarOtp(arr);
+                              handleVerifyAadhaarOtp(val);
+                            }}
+                            status={aadhaarError ? "error" : isVerifyingAadhaarOtp ? "success" : "idle"}
+                            size="sm"
+                            autoFocus
+                          />
                           <button
                             type="button"
-                            onClick={handleVerifyAadhaarOtp}
+                            onClick={() => handleVerifyAadhaarOtp()}
                             disabled={isVerifyingAadhaarOtp}
-                            className="w-full h-10 bg-[#00bd6f] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5"
+                            className="w-full h-11 bg-[#00bd6f] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs"
                           >
                             {isVerifyingAadhaarOtp ? <Loader2 size={14} className="animate-spin" /> : "Verify Aadhaar"}
                           </button>
                         </div>
                       )}
 
-                      {aadhaarError && <p className="text-rose-500 text-xs font-semibold">{aadhaarError}</p>}
+                      {aadhaarError && <p className="text-rose-500 text-xs font-semibold text-center">{aadhaarError}</p>}
                     </div>
                   ) : (
                     <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/80 flex items-center justify-between text-xs text-emerald-900 font-medium">
