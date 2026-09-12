@@ -11,9 +11,11 @@ import { LoadingSpinner } from '@/shared/components/layout';
  * picked up even if this device was previously told the partner was incomplete.
  */
 const onboardingCache = new Map<string, boolean>();
+let inFlightOnboardingPromise: Promise<boolean> | null = null;
 
 /** Drop the cached flag (e.g. after onboarding is submitted or on logout). */
 export function invalidateOnboardingCache(partnerId?: string | null): void {
+  inFlightOnboardingPromise = null;
   if (partnerId) {
     onboardingCache.delete(partnerId);
   } else {
@@ -36,21 +38,29 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       setBackendCheckDone(true);
       return;
     }
-    // No cached flag — ask the backend
-    (async () => {
-      try {
-        const data = await get<Record<string, any>>('/delivery/onboarding');
-        const status = data?.onboardingStatus;
-        const isComplete = status === 'COMPLETE';
-        onboardingCache.set(partnerId, isComplete);
-        setBackendOnboardingComplete(isComplete);
-      } catch {
-        onboardingCache.set(partnerId, false);
-        setBackendOnboardingComplete(false);
-      } finally {
-        setBackendCheckDone(true);
-      }
-    })();
+
+    // Reuse in-flight request if one is already running
+    if (!inFlightOnboardingPromise) {
+      inFlightOnboardingPromise = (async () => {
+        try {
+          const data = await get<Record<string, any>>('/delivery/onboarding');
+          const status = data?.onboardingStatus;
+          const isComplete = status === 'COMPLETE';
+          onboardingCache.set(partnerId, isComplete);
+          return isComplete;
+        } catch {
+          onboardingCache.set(partnerId, false);
+          return false;
+        } finally {
+          inFlightOnboardingPromise = null;
+        }
+      })();
+    }
+
+    inFlightOnboardingPromise.then((isComplete) => {
+      setBackendOnboardingComplete(isComplete);
+      setBackendCheckDone(true);
+    });
   }, [partnerId, cached]);
 
   if (isLoadingAuth) {

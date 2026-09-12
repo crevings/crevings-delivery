@@ -65,11 +65,19 @@ export async function initPushNotifications(): Promise<void> {
     // Foreground push notification received
     await PushNotifications.addListener("pushNotificationReceived", (notification: PushNotificationSchema) => {
       console.log("[Push] Foreground notification received:", notification);
+      const data = notification?.data;
+      if (data && (data.type === "DISPATCH_REQUEST" || data.orderId)) {
+        window.dispatchEvent(new CustomEvent("delivery:dispatch_event", { detail: data }));
+      }
     });
 
     // Push notification tapped
     await PushNotifications.addListener("pushNotificationActionPerformed", (action: ActionPerformed) => {
       console.log("[Push] Notification tapped:", action);
+      const data = action?.notification?.data;
+      if (data && (data.type === "DISPATCH_REQUEST" || data.orderId)) {
+        window.dispatchEvent(new CustomEvent("delivery:dispatch_event", { detail: data }));
+      }
     });
 
   } catch (err: any) {

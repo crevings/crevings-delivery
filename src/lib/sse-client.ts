@@ -9,6 +9,8 @@ interface SSEClientOptions {
   onConnected?: () => void;
   /** Called when the connection state changes */
   onConnectionChange?: (connected: boolean) => void;
+  /** Called when max retries are exceeded or fatal error occurs (for failover) */
+  onFailover?: () => void;
   /** Maximum reconnect attempts before giving up (default: 10) */
   maxRetries?: number;
   /** Base delay in ms for exponential backoff (default: 1000) */
@@ -29,6 +31,7 @@ export function createSSEClient(options: SSEClientOptions): SSEClient {
     events = {},
     onConnected,
     onConnectionChange,
+    onFailover,
     maxRetries = 10,
     baseDelay = 1000,
     maxDelay = 10000,
@@ -49,7 +52,8 @@ export function createSSEClient(options: SSEClientOptions): SSEClient {
       eventSource.close();
     }
 
-    eventSource = new EventSource(url, { withCredentials: true });
+    const isMercure = url.includes('.well-known/mercure');
+    eventSource = new EventSource(url, { withCredentials: !isMercure });
 
     // Register custom event listeners
     for (const [eventName, handler] of Object.entries(events)) {
@@ -90,6 +94,7 @@ export function createSSEClient(options: SSEClientOptions): SSEClient {
 
       if (retryCount >= maxRetries) {
         console.error(`[SSE] Max retries (${maxRetries}) reached`);
+        onFailover?.();
         return;
       }
 
@@ -134,6 +139,9 @@ export interface MercureRealtimeClientOptions {
   maxDelay?: number;
 }
 
+const tokenCache = new Map<string, { data: any; expiry: number }>();
+const inFlightTokenFetch = new Map<string, Promise<any>>();
+
 /**
  * Mercure-first realtime client with seamless fallback to legacy Node SSE.
  *
@@ -156,13 +164,56 @@ export function createMercureRealtimeClient(options: MercureRealtimeClientOption
   let activeClient: SSEClient | null = null;
   let closed = false;
 
+  function connectLegacyFallback() {
+    if (closed) return;
+    const fallbackUrl = `${BASE_URL}/delivery/stream`;
+    console.log(`[Delivery SSE Fallback] Connecting to legacy SSE stream at ${fallbackUrl}`);
+    activeClient = createSSEClient({
+      url: fallbackUrl,
+      events,
+      onConnected,
+      onConnectionChange,
+      maxRetries,
+      baseDelay,
+      maxDelay,
+    });
+    activeClient.connect();
+  }
+
+  async function fetchTokenWithCache(): Promise<any> {
+    const cached = tokenCache.get(scope);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.data;
+    }
+
+    if (inFlightTokenFetch.has(scope)) {
+      return inFlightTokenFetch.get(scope);
+    }
+
+    const promise = (async () => {
+      try {
+        const res = await get<any>(`/${scope}/realtime/token?scope=${scope}`);
+        const data = res?.data || res;
+        if (data) {
+          // Cache for 10 minutes
+          tokenCache.set(scope, { data, expiry: Date.now() + 10 * 60 * 1000 });
+        }
+        return data;
+      } finally {
+        inFlightTokenFetch.delete(scope);
+      }
+    })();
+
+    inFlightTokenFetch.set(scope, promise);
+    return promise;
+  }
+
   async function start() {
     if (closed) return;
 
     try {
-      // 1. Fetch Mercure token and discovery information
-      const res = await get<any>(`/${scope}/realtime/token?scope=${scope}`);
-      const data = res?.data || res;
+      // 1. Fetch Mercure token and discovery information (cached & deduplicated)
+      const data = await fetchTokenWithCache();
 
       if (!closed && data?.mode === 'mercure' && data.hubUrl && data.topics?.length) {
         const hubUrl = new URL(data.hubUrl);
@@ -178,7 +229,12 @@ export function createMercureRealtimeClient(options: MercureRealtimeClientOption
           events,
           onConnected,
           onConnectionChange,
-          maxRetries,
+          onFailover: () => {
+            console.warn(`[Mercure ${scope}] Connection failed, falling back to legacy SSE`);
+            tokenCache.delete(scope);
+            connectLegacyFallback();
+          },
+          maxRetries: 3, // Failover quickly after 3 retries
           baseDelay,
           maxDelay,
         });
@@ -191,18 +247,7 @@ export function createMercureRealtimeClient(options: MercureRealtimeClientOption
 
     // Fallback to legacy Node.js SSE endpoint
     if (!closed) {
-      const fallbackUrl = `${BASE_URL}/delivery/stream`;
-      console.log(`[Delivery SSE Fallback] Connecting to legacy SSE stream at ${fallbackUrl}`);
-      activeClient = createSSEClient({
-        url: fallbackUrl,
-        events,
-        onConnected,
-        onConnectionChange,
-        maxRetries,
-        baseDelay,
-        maxDelay,
-      });
-      activeClient.connect();
+      connectLegacyFallback();
     }
   }
 

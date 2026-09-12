@@ -14,7 +14,7 @@ interface NewOrderAlertProps {
 export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, onAccept, onReject, order }) => {
   const [rejectStep, setRejectStep] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [timeLeft, setTimeLeft] = useState(12);
+  const [timeLeft, setTimeLeft] = useState(30);
   
   useEffect(() => {
     if (isOpen && !rejectStep) {
@@ -22,20 +22,19 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
     }
   }, [isOpen, rejectStep]);
 
-  // 12-second countdown timer for popup dismissal and auto-timeout
+  // 30-second countdown timer for popup dismissal and auto-timeout
   useEffect(() => {
     if (!isOpen) {
-      setTimeLeft(12);
+      setTimeLeft(30);
       return;
     }
 
-    setTimeLeft(12);
+    setTimeLeft(30);
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          // Auto-reject / dismiss on 12s timeout
-          if (onReject) onReject('Timeout');
+          // Auto-dismiss popup on 30s timeout without sending explicit reject
           onClose();
           return 0;
         }
@@ -66,7 +65,9 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
   };
 
   const handleFinalReject = () => {
-    if (onReject) onReject(rejectReason || 'User rejected');
+    if (onReject) {
+      onReject(rejectReason || 'Declined by partner');
+    }
     onClose();
   };
 
@@ -100,7 +101,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
             <div className="bg-emerald-50 p-6 flex flex-col items-center relative overflow-hidden">
                <div className="absolute inset-0 bg-emerald-500/10 animate-pulse"></div>
                
-               {/* 12s Countdown badge */}
+               {/* 30s Countdown badge */}
                <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 bg-emerald-600 text-white text-xs font-black px-2.5 py-1 rounded-full shadow-md animate-pulse">
                  <span>⏱️</span>
                  <span>{timeLeft}s</span>
@@ -124,7 +125,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
                <div className="w-full bg-emerald-200 h-1.5 rounded-full mt-4 overflow-hidden relative z-10">
                  <div 
                    className="bg-emerald-600 h-full transition-all duration-1000 ease-linear rounded-full"
-                   style={{ width: `${(timeLeft / 12) * 100}%` }}
+                   style={{ width: `${(timeLeft / 30) * 100}%` }}
                  />
                </div>
             </div>
@@ -186,7 +187,7 @@ export const NewOrderAlert: React.FC<NewOrderAlertProps> = ({ isOpen, onClose, o
               </button>
               <button 
                 onClick={handleConfirmAccept}
-                className="flex-[2] py-4 px-4 bg-blue-600 text-white font-bold rounded-2xl active:scale-95 transition-transform uppercase tracking-wider text-[14px] shadow-lg shadow-blue-200"
+                className="flex-[2] py-4 px-4 bg-blue-600 text-white font-bold rounded-2xl active:scale-95 transition-transform uppercase tracking-wider text-[14px]"
               >
                 Accept Gig
               </button>

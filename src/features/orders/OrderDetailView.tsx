@@ -78,6 +78,93 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
     return undefined;
   }, [order.status]);
 
+  const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Live driver position tracking for real-time pickup/dropoff distance display
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+
+    let watchId: number;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setDriverPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 30000 }
+    );
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => setDriverPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+    );
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
+  }, []);
+
+  const calculateDistanceKm = (
+    lat1?: number | null,
+    lon1?: number | null,
+    lat2?: number | null,
+    lon2?: number | null
+  ): number | null => {
+    if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+    if (isNaN(lat1) || isNaN(lon1) || isNaN(lat2) || isNaN(lon2)) return null;
+    if (lat1 === 0 && lon1 === 0) return null;
+    if (lat2 === 0 && lon2 === 0) return null;
+
+    const R = 6371; // Earth's radius in km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Number((R * c).toFixed(1));
+  };
+
+  // Derive distance dynamically:
+  // 1. If we have driver GPS + target coordinates (restaurant or customer depending on status), compute live distance
+  // 2. Otherwise fall back to order.pickupDistanceKm or restaurant-to-customer distance
+  const liveTargetDistanceKm = (() => {
+    const s = (currentStatus || '').toUpperCase();
+    const isHeadingToCustomer =
+      s === 'OUT FOR DELIVERY' ||
+      s === 'OUT_FOR_DELIVERY' ||
+      s === 'PICKED UP' ||
+      s === 'REACHED_CUSTOMER' ||
+      s === 'REACHED CUSTOMER';
+
+    const targetCoords = isHeadingToCustomer
+      ? order.customerCoordinates
+      : order.restaurantCoordinates;
+
+    if (driverPos && targetCoords?.lat && targetCoords?.lng) {
+      const d = calculateDistanceKm(driverPos.lat, driverPos.lng, targetCoords.lat, targetCoords.lng);
+      if (d !== null) return `${d} km`;
+    }
+
+    if (order.pickupDistanceKm) {
+      return `${order.pickupDistanceKm} km`;
+    }
+
+    // Fallback: restaurant to customer distance
+    if (order.restaurantCoordinates && order.customerCoordinates) {
+      const d = calculateDistanceKm(
+        order.restaurantCoordinates.lat,
+        order.restaurantCoordinates.lng,
+        order.customerCoordinates.lat,
+        order.customerCoordinates.lng
+      );
+      if (d !== null) return `${d} km`;
+    }
+
+    return '--';
+  })();
+
   const isCOD = order.paymentStatus !== 'Paid';
   const orderTotal = Number(order.total) || 0;
 
@@ -315,7 +402,7 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
               <div className="bg-[#FFFFFF] rounded-2xl border border-[#E5E7EB] flex divide-x divide-slate-100 shadow-xs">
                 <div className="flex-1 p-3.5 flex flex-col items-center justify-center text-center">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Distance</span>
-                  <span className="text-[15px] font-black text-slate-800">{order.pickupDistanceKm ? `${order.pickupDistanceKm} km` : '--'}</span>
+                  <span className="text-[15px] font-black text-slate-800">{liveTargetDistanceKm}</span>
                 </div>
                 <div className="flex-1 p-3.5 flex flex-col items-center justify-center text-center">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Est. Time</span>
@@ -431,6 +518,24 @@ export const OrderDetailView: React.FC<OrderDetailViewProps> = ({ order, onBack,
                 </p>
               </div>
             </div>
+          </div>
+        ) : null}
+
+        {/* Customer Tip Badge */}
+        {order.tip && order.tip > 0 ? (
+          <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">💛</span>
+              <div>
+                <p className="text-[11px] font-bold text-amber-800 tracking-wide uppercase">Customer Tip Included</p>
+                <p className="text-[13px] font-medium text-amber-900 leading-snug">
+                  100% (₹{order.tip}) will be added to your earnings
+                </p>
+              </div>
+            </div>
+            <span className="text-sm font-extrabold text-amber-700 bg-amber-100/80 px-2.5 py-1 rounded-xl shrink-0">
+              +₹{order.tip}
+            </span>
           </div>
         ) : null}
 

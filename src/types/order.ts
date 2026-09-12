@@ -47,6 +47,8 @@ export interface Order {
   pickupDistanceKm?: string;
   /** Delivery fee the customer paid — the driver's earnings for this trip. */
   deliveryFee?: number;
+  /** Customer tip amount for this delivery. */
+  tip?: number;
   /** Earnings credited to the driver once the order is completed. */
   driverEarnings?: number;
   customerType?: 'Regular' | 'First Time' | 'Inactive';

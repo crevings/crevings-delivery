@@ -9,10 +9,11 @@ export const useActiveOrders = () => {
     "/delivery/orders/active",
     fetcher,
     {
-      revalidateOnMount: true,
-      // Keep the driver's active list fresh dynamically in real-time
-      refreshInterval: 3000,
       ...SWR_LIVE,
+      revalidateOnMount: true,
+      revalidateOnFocus: true,
+      dedupingInterval: 2000,
+      refreshInterval: 0,
     }
   );
 
@@ -107,6 +108,7 @@ export const mapActiveOrder = (raw: any): Order => {
     restaurantCoordinates,
     customerCoordinates,
     deliveryFee: raw.deliveryFee != null ? Number(raw.deliveryFee) : (raw.totals?.deliveryFee != null ? Number(raw.totals.deliveryFee) : undefined),
+    tip: raw.tip != null ? Number(raw.tip) : undefined,
     driverEarnings: raw.driverEarnings != null ? Number(raw.driverEarnings) : undefined,
     customerType: "Regular",
     phone: raw.customerDetails?.phone || raw.customer?.phone || "",

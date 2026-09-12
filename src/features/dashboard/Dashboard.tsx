@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Package,
   AlertTriangle,
@@ -28,9 +28,14 @@ export const Dashboard: React.FC = () => {
   const setFloatingCash = usePartnerStore(s => s.setFloatingCash);
 
   const [showNewOrderAlert, setShowNewOrderAlert] = useState(false);
+  const showNewOrderAlertRef = useRef(showNewOrderAlert);
+  useEffect(() => {
+    showNewOrderAlertRef.current = showNewOrderAlert;
+  }, [showNewOrderAlert]);
+
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
 
-  // Sync floating cash from partner profile on mount and periodically
+  // Sync floating cash from partner profile on mount and on visibility change
   useEffect(() => {
     let active = true;
     const fetchProfile = async () => {
@@ -49,10 +54,17 @@ export const Dashboard: React.FC = () => {
       }
     };
     fetchProfile();
-    const interval = setInterval(fetchProfile, 10000);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchProfile();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
       active = false;
-      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [setFloatingCash, setIsOnline]);
 
@@ -90,6 +102,52 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     if (!isOnline) return;
 
+    const handleDispatchEvent = (payload: any) => {
+      console.log('[Mercure Realtime] Received targeted DISPATCH_REQUEST:', payload);
+      if (isFloatingCashBlocked) return;
+      if (payload && (payload.type === 'DISPATCH_REQUEST' || payload.orderId)) {
+        // Dedup: don't overwrite existing popup — driver is already viewing one.
+        // The busy lock + status gate prevent double-pings at the backend level.
+        if (showNewOrderAlertRef.current) {
+          console.log('[Mercure Realtime] Ignoring DISPATCH_REQUEST — popup already showing:', payload.orderId);
+          return;
+        }
+        const formatted: Order = {
+          id: payload.orderId,
+          orderId: payload.orderId,
+          displayOrderId: payload.displayOrderId || payload.displayOrderNumber,
+          displayOrderNumber: payload.displayOrderNumber || payload.displayOrderId,
+          customer: payload.customerName || payload.customer || 'Customer',
+          customerName: payload.customerName || payload.customer || 'Customer',
+          type: 'Delivery',
+          channel: 'Crevings',
+          items: payload.itemsSummary || `${payload.itemsCount || 1} Items`,
+          total: String(payload.total || payload.orderTotal || '0.00'),
+          status: 'Incoming',
+          time: '15:00',
+          paymentStatus: payload.isCOD ? 'Unpaid' : 'Paid',
+          address: payload.dropoffAddress || payload.deliveryAddress || payload.customerAddress || 'Delivery Address',
+          restaurantName: payload.restaurantName || 'Restaurant',
+          restaurantAddress: payload.restaurantAddress,
+          restaurantPhone: payload.restaurantPhone,
+          pickupDistanceKm: payload.pickupDistanceKm || (payload.distanceKm ? String(payload.distanceKm) : undefined),
+          deliveryFee: payload.deliveryFee != null ? Number(payload.deliveryFee) : undefined,
+          driverEarnings: payload.driverEarnings != null ? Number(payload.driverEarnings) : (payload.deliveryFee != null ? Number(payload.deliveryFee) : undefined),
+        };
+        setPendingOrder(formatted);
+        setShowNewOrderAlert(true);
+        refreshActiveOrders();
+      }
+    };
+
+    const onCustomDispatch = (e: any) => {
+      if (e?.detail) {
+        console.log('[Native Push] Received targeted DISPATCH_REQUEST:', e.detail);
+        handleDispatchEvent(e.detail);
+      }
+    };
+    window.addEventListener('delivery:dispatch_event', onCustomDispatch);
+
     const realtimeClient = createMercureRealtimeClient({
       scope: 'delivery',
       events: {
@@ -101,49 +159,15 @@ export const Dashboard: React.FC = () => {
             setFloatingCash(Number(payload.floatingCash) || 0);
           }
         },
-        dispatch: (payload: any) => {
-          console.log('[Mercure Realtime] Received targeted DISPATCH_REQUEST:', payload);
-          if (isFloatingCashBlocked) return;
-          if (payload && payload.type === 'DISPATCH_REQUEST' && payload.orderId) {
-            // Dedup: don't overwrite existing popup — driver is already viewing one.
-            // The busy lock + status gate prevent double-pings at the backend level.
-            if (showNewOrderAlert) {
-              console.log('[Mercure Realtime] Ignoring DISPATCH_REQUEST — popup already showing:', payload.orderId);
-              return;
-            }
-            const formatted: Order = {
-              id: payload.orderId,
-              orderId: payload.orderId,
-              displayOrderId: payload.displayOrderId || payload.displayOrderNumber,
-              displayOrderNumber: payload.displayOrderNumber || payload.displayOrderId,
-              customer: payload.customerName || payload.customer || 'Customer',
-              customerName: payload.customerName || payload.customer || 'Customer',
-              type: 'Delivery',
-              channel: 'Crevings',
-              items: payload.itemsSummary || `${payload.itemsCount || 1} Items`,
-              total: String(payload.total || payload.orderTotal || '0.00'),
-              status: 'Incoming',
-              time: '15:00',
-              paymentStatus: payload.isCOD ? 'Unpaid' : 'Paid',
-              address: payload.dropoffAddress || payload.deliveryAddress || payload.customerAddress || 'Delivery Address',
-              restaurantName: payload.restaurantName || 'Restaurant',
-              restaurantAddress: payload.restaurantAddress,
-              restaurantPhone: payload.restaurantPhone,
-              pickupDistanceKm: payload.pickupDistanceKm || (payload.distanceKm ? String(payload.distanceKm) : undefined),
-              deliveryFee: payload.deliveryFee != null ? Number(payload.deliveryFee) : undefined,
-              driverEarnings: payload.driverEarnings != null ? Number(payload.driverEarnings) : (payload.deliveryFee != null ? Number(payload.deliveryFee) : undefined),
-            };
-            setPendingOrder(formatted);
-            setShowNewOrderAlert(true);
-            refreshActiveOrders();
-          }
-        },
+        dispatch: handleDispatchEvent,
+        message: handleDispatchEvent,
       },
     });
 
     realtimeClient.connect();
 
     return () => {
+      window.removeEventListener('delivery:dispatch_event', onCustomDispatch);
       realtimeClient.close();
     };
   }, [isOnline, isFloatingCashBlocked]);

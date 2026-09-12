@@ -37,12 +37,12 @@ export function useLocationManager(isLoggedIn: boolean) {
     async (lat: number, lng: number) => {
       if (!isLoggedIn) return;
       const now = Date.now();
-      // Sync at most once every 8 seconds, or if moved > 50 meters
+      // Sync at most once every 5 seconds, or if moved > 50 meters
       const last = lastCoordsRef.current;
       const timeDiff = now - lastSyncTimeRef.current;
       const hasMoved = !last || Math.abs(last.lat - lat) > 0.0003 || Math.abs(last.lng - lng) > 0.0003;
 
-      if (timeDiff >= 8000 || (timeDiff >= 3000 && hasMoved)) {
+      if (timeDiff >= 5000 || (timeDiff >= 2500 && hasMoved)) {
         lastSyncTimeRef.current = now;
         lastCoordsRef.current = { lat, lng };
         try {
@@ -183,12 +183,12 @@ export function useLocationManager(isLoggedIn: boolean) {
 
     startWatching();
 
-    // Heartbeat safety poll every 6s when online or missing coordinates
+    // Heartbeat safety poll every 5s when online or missing coordinates
     const pollInterval = setInterval(() => {
       if (!locationState.hasPermission || locationState.latitude === null || isOnline) {
         requestAndFetchLocation();
       }
-    }, isOnline ? 6000 : 10000);
+    }, isOnline ? 5000 : 10000);
 
     return () => {
       cancelled = true;

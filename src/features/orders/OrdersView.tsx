@@ -14,6 +14,9 @@ import { useOrdersStore } from '@/app/store';
 
 // OrdersView is mounted directly by the router, so it sources its state from
 // the zustand orders store and keeps it dynamically in sync with the backend.
+const ARRIVE_TRANSITION_SET = new Set(['ACCEPTED', 'PREPARING', 'READY', 'READY_FOR_PICKUP', 'DRIVER_ASSIGNED']);
+const REACH_TRANSITION_SET = new Set(['DRIVER_ARRIVED', 'OUT FOR DELIVERY', 'OUT_FOR_DELIVERY']);
+
 export const OrdersView: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -67,10 +70,10 @@ export const OrdersView: React.FC = () => {
 
     const s = (order.status || '').toUpperCase();
     let nextStatus: string | null = null;
-    if (s === 'ACCEPTED' || s === 'PREPARING' || s === 'READY' ||
-        s === 'READY_FOR_PICKUP' || s === 'DRIVER_ASSIGNED') {
+
+    if (ARRIVE_TRANSITION_SET.has(s)) {
       nextStatus = 'DRIVER_ARRIVED';
-    } else if (s === 'DRIVER_ARRIVED' || s === 'OUT FOR DELIVERY' || s === 'OUT_FOR_DELIVERY') {
+    } else if (REACH_TRANSITION_SET.has(s)) {
       nextStatus = 'REACHED_CUSTOMER';
     }
     if (!nextStatus) return;
